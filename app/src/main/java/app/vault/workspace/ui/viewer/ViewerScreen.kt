@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
@@ -72,6 +73,7 @@ fun ViewerScreen(
     onRequestExport: (VaultItem) -> Unit,
     onToggleFavorite: (VaultItem) -> Unit,
     onMoveToTrash: (VaultItem) -> Unit,
+    onMoveToFolder: (VaultItem) -> Unit = {},
     onPlaybackActive: (Boolean) -> Unit,
     onPlayerCreated: (ExoPlayer) -> Unit,
 ) {
@@ -139,6 +141,7 @@ fun ViewerScreen(
                     onShowInfo = { showInfo = true },
                     onToggleFavorite = { onToggleFavorite(item) },
                     onShowTrash = { showTrashConfirm = true },
+                    onShowMoveFolder = { onMoveToFolder(item) },
                     overlay = true,
                 )
             }
@@ -156,6 +159,7 @@ fun ViewerScreen(
                     onShowInfo = { showInfo = true },
                     onToggleFavorite = { onToggleFavorite(item) },
                     onShowTrash = { showTrashConfirm = true },
+                    onShowMoveFolder = { onMoveToFolder(item) },
                     overlay = false,
                 )
             },
@@ -262,6 +266,7 @@ private fun ViewerTopChrome(
     onShowInfo: () -> Unit,
     onToggleFavorite: () -> Unit,
     onShowTrash: () -> Unit,
+    onShowMoveFolder: () -> Unit = {},
     overlay: Boolean,
 ) {
     val colors = if (overlay) {
@@ -308,6 +313,16 @@ private fun ViewerTopChrome(
                     onClick = {
                         onMenuOpenChange(false)
                         onToggleFavorite()
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text("Move to folder") },
+                    leadingIcon = {
+                        Icon(Icons.AutoMirrored.Filled.DriveFileMove, contentDescription = null, tint = VaultAccent)
+                    },
+                    onClick = {
+                        onMenuOpenChange(false)
+                        onShowMoveFolder()
                     },
                 )
                 DropdownMenuItem(

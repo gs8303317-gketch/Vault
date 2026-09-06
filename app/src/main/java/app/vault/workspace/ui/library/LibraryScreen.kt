@@ -35,6 +35,8 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.automirrored.filled.DriveFileMove
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
@@ -101,8 +103,12 @@ fun LibraryScreen(
     onImport: () -> Unit,
     onOpenItem: (VaultItem) -> Unit,
     onSettings: () -> Unit,
+    onFolders: () -> Unit = {},
+    folderTitle: String? = null,
+    onClearFolderFilter: (() -> Unit)? = null,
     onToggleFavorite: (VaultItem) -> Unit,
     onMoveToTrash: (List<String>) -> Unit,
+    onMoveToFolder: (List<String>) -> Unit = {},
     onLoadThumb: suspend (id: String) -> Bitmap?,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
@@ -159,6 +165,21 @@ fun LibraryScreen(
                         IconButton(
                             onClick = {
                                 if (selectedIds.isNotEmpty()) {
+                                    onMoveToFolder(selectedIds.toList())
+                                    exitSelection()
+                                }
+                            },
+                            enabled = selectedIds.isNotEmpty(),
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.DriveFileMove,
+                                contentDescription = "Move to folder",
+                                tint = if (selectedIds.isNotEmpty()) VaultAccent else VaultTextMuted,
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                if (selectedIds.isNotEmpty()) {
                                     onMoveToTrash(selectedIds.toList())
                                     exitSelection()
                                 }
@@ -176,8 +197,18 @@ fun LibraryScreen(
                 )
             } else {
                 TopAppBar(
-                    title = { Text("Vault") },
+                    title = { Text(folderTitle ?: "Vault") },
+                    navigationIcon = {
+                        if (onClearFolderFilter != null) {
+                            IconButton(onClick = onClearFolderFilter) {
+                                Icon(Icons.Default.Close, contentDescription = "All items")
+                            }
+                        }
+                    },
                     actions = {
+                        IconButton(onClick = onFolders) {
+                            Icon(Icons.Default.Folder, contentDescription = "Folders")
+                        }
                         IconButton(onClick = onSettings) {
                             Icon(Icons.Default.Settings, contentDescription = "Settings")
                         }

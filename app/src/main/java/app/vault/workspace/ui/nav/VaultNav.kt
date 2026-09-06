@@ -3,6 +3,8 @@ package app.vault.workspace.ui.nav
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -12,6 +14,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -19,11 +24,15 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import app.vault.workspace.auth.AutoLockController
+import app.vault.workspace.auth.BiometricVault
 import app.vault.workspace.auth.SessionManager
+import app.vault.workspace.data.VaultFolder
 import app.vault.workspace.data.VaultItem
 import app.vault.workspace.data.VaultRepository
 import app.vault.workspace.export.ExportController
 import app.vault.workspace.import.ImportController
+import app.vault.workspace.ui.folders.FoldersScreen
+import app.vault.workspace.ui.folders.MoveToFolderDialog
 import app.vault.workspace.ui.library.LibraryScreen
 import app.vault.workspace.ui.settings.SettingsScreen
 import app.vault.workspace.ui.setup.FirstRunScreen
@@ -40,6 +49,7 @@ object Routes {
     const val Library = "library"
     const val Settings = "settings"
     const val Trash = "trash"
+    const val Folders = "folders"
     const val Viewer = "viewer/{id}"
     fun viewer(id: String) = "viewer/$id"
 }
@@ -66,6 +76,7 @@ fun VaultNav(
 ) {
     val nav = rememberNavController()
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val sessionState by session.state.collectAsState()
     val idleTimeoutMs by autoLock.idleTimeoutMsFlow.collectAsState()
     val start = if (session.isSetupComplete) Routes.Unlock else Routes.FirstRun
@@ -77,23 +88,44 @@ fun VaultNav(
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var items by remember { mutableStateOf<List<VaultItem>>(emptyList()) }
     var trashItems by remember { mutableStateOf<List<VaultItem>>(emptyList()) }
+    var folders by remember { mutableStateOf<List<VaultFolder>>(emptyList()) }
+    var currentFolderId by remember { mutableStateOf<String?>(null) }
+    var currentFolderName by remember { mutableStateOf<String?>(null) }
     var activePlayers by remember { mutableStateOf<List<ExoPlayer>>(emptyList()) }
     var pendingExport by remember { mutableStateOf<VaultItem?>(null) }
+    var moveItemIds by remember { mutableStateOf<List<String>?>(null) }
+    var biometricEnabled by remember { mutableStateOf(BiometricVault.isEnabled(context)) }
+    var biometricError by remember { mutableStateOf<String?>(null) }
+    val biometricHardware = remember {
+        BiometricVault.isBiometricAvailable(context)
+    }
 
     val importController = remember { ImportController(repository) }
     val exportController = remember { ExportController(repository) }
 
-    LaunchedEffect(sessionState) {
+    LaunchedEffect(sessionState, currentFolderId) {
         if (sessionState is SessionManager.SessionState.Unlocked) {
+            biometricEnabled = BiometricVault.isEnabled(context)
             launch {
-                repository.observeLibrary().collect { items = it }
+                repository.observeLibrary(currentFolderId).collect { items = it }
             }
             launch {
                 repository.observeTrashItems().collect { trashItems = it }
             }
+            launch {
+                repository.observeFolders().collect { folders = it }
+            }
+            if (currentFolderId != null) {
+                currentFolderName = repository.getFolder(currentFolderId!!)?.name
+            } else {
+                currentFolderName = null
+            }
         } else {
             items = emptyList()
             trashItems = emptyList()
+            folders = emptyList()
+            currentFolderId = null
+            currentFolderName = null
             activePlayers.forEach { it.release() }
             activePlayers = emptyList()
             autoLock.setPlaybackActive(false)
@@ -115,6 +147,123 @@ fun VaultNav(
         onDispose { session.removeLockListener(listener) }
     }
 
+    fun promptBiometricUnlock() {
+        val activity = context as? FragmentActivity ?: return
+        if (!BiometricVault.isEnabled(context)) return
+        if (session.lockoutStore().isLocked()) {
+            lockoutMs = session.lockoutStore().remainingLockMs()
+            return
+        }
+        try {
+            val cipher = BiometricVault.createCipherForDecrypt(context)
+            val executor = ContextCompat.getMainExecutor(context)
+            val prompt = BiometricPrompt(
+                activity,
+                executor,
+                object : BiometricPrompt.AuthenticationCallback() {
+                    override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                        val crypto = result.cryptoObject?.cipher ?: return
+                        scope.launch {
+                            try {
+                                val vmk = BiometricVault.unwrap(context, crypto)
+                                val unlockResult = session.unlockWithVmk(vmk)
+                                unlockResult.onSuccess {
+                                    unlockError = null
+                                    lockoutMs = 0
+                                    nav.navigate(Routes.Library) {
+                                        popUpTo(0) { inclusive = true }
+                                    }
+                                }.onFailure { e ->
+                                    when (e) {
+                                        is SessionManager.LockedOutException -> {
+                                            lockoutMs = e.remainingMs
+                                            unlockError = null
+                                        }
+                                        else -> unlockError = "Biometric unlock failed"
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                unlockError = "Biometric unlock failed"
+                            }
+                        }
+                    }
+
+                    override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                        if (errorCode != BiometricPrompt.ERROR_USER_CANCELED &&
+                            errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON &&
+                            errorCode != BiometricPrompt.ERROR_CANCELED
+                        ) {
+                            unlockError = errString.toString()
+                        }
+                    }
+                },
+            )
+            val info = BiometricPrompt.PromptInfo.Builder()
+                .setTitle("Unlock Vault")
+                .setSubtitle("Use biometrics to unlock")
+                .setNegativeButtonText("Use PIN")
+                .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+                .build()
+            prompt.authenticate(info, BiometricPrompt.CryptoObject(cipher))
+        } catch (e: Exception) {
+            unlockError = "Biometrics unavailable — use PIN"
+        }
+    }
+
+    fun promptEnableBiometric() {
+        val activity = context as? FragmentActivity ?: run {
+            biometricError = "Biometrics require a compatible activity"
+            return
+        }
+        try {
+            val cipher = BiometricVault.createCipherForEncrypt()
+            val executor = ContextCompat.getMainExecutor(context)
+            val prompt = BiometricPrompt(
+                activity,
+                executor,
+                object : BiometricPrompt.AuthenticationCallback() {
+                    override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                        val crypto = result.cryptoObject?.cipher ?: return
+                        scope.launch {
+                            try {
+                                val vmk = session.requireVmk().copyOf()
+                                try {
+                                    BiometricVault.wrapAndStore(context, crypto, vmk)
+                                    biometricEnabled = true
+                                    biometricError = null
+                                    statusMessage = "Biometric unlock enabled"
+                                } finally {
+                                    app.vault.workspace.crypto.KeyHierarchy.wipe(vmk)
+                                }
+                            } catch (e: Exception) {
+                                biometricError = e.message ?: "Could not enable biometrics"
+                                biometricEnabled = false
+                            }
+                        }
+                    }
+
+                    override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                        if (errorCode != BiometricPrompt.ERROR_USER_CANCELED &&
+                            errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON &&
+                            errorCode != BiometricPrompt.ERROR_CANCELED
+                        ) {
+                            biometricError = errString.toString()
+                        }
+                    }
+                },
+            )
+            val info = BiometricPrompt.PromptInfo.Builder()
+                .setTitle("Enable biometric unlock")
+                .setSubtitle("Confirm to wrap your vault key")
+                .setNegativeButtonText("Cancel")
+                .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
+                .build()
+            prompt.authenticate(info, BiometricPrompt.CryptoObject(cipher))
+        } catch (e: Exception) {
+            biometricError = e.message ?: "Could not enable biometrics"
+        }
+    }
+
     val openDocLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris: List<Uri> ->
@@ -132,6 +281,13 @@ fun VaultNav(
             statusMessage = "Importing ${uris.size} file(s)…"
             try {
                 val result = importController.importAll(uris)
+                // If viewing a folder, place new imports there
+                val folderId = currentFolderId
+                if (folderId != null) {
+                    result.succeeded.forEach { item ->
+                        repository.setItemFolder(item.id, folderId)
+                    }
+                }
                 statusMessage = when {
                     result.failures.isEmpty() ->
                         "Imported ${result.succeeded.size} file(s)"
@@ -191,6 +347,7 @@ fun VaultNav(
             )
         }
         composable(Routes.Unlock) {
+            val bioReady = biometricHardware && BiometricVault.isEnabled(context)
             UnlockScreen(
                 lockedOutMs = lockoutMs,
                 errorMessage = unlockError,
@@ -224,6 +381,12 @@ fun VaultNav(
                         }
                     }
                 },
+                biometricAvailable = bioReady,
+                onBiometricUnlock = if (bioReady) {
+                    { promptBiometricUnlock() }
+                } else {
+                    null
+                },
             )
         }
         composable(Routes.Library) {
@@ -241,6 +404,16 @@ fun VaultNav(
                     nav.navigate(Routes.viewer(item.id))
                 },
                 onSettings = { nav.navigate(Routes.Settings) },
+                onFolders = { nav.navigate(Routes.Folders) },
+                folderTitle = currentFolderName,
+                onClearFolderFilter = if (currentFolderId != null) {
+                    {
+                        currentFolderId = null
+                        currentFolderName = null
+                    }
+                } else {
+                    null
+                },
                 onToggleFavorite = { item ->
                     scope.launch {
                         repository.setFavorite(item.id, !item.favorite)
@@ -256,7 +429,46 @@ fun VaultNav(
                         }
                     }
                 },
+                onMoveToFolder = { ids ->
+                    moveItemIds = ids
+                },
                 onLoadThumb = { id -> repository.loadThumbBitmap(id) },
+            )
+        }
+        composable(Routes.Folders) {
+            FoldersScreen(
+                folders = folders,
+                onBack = { nav.popBackStack() },
+                onOpenFolder = { folder ->
+                    currentFolderId = folder.id
+                    currentFolderName = folder.name
+                    // Return to library (or create it) with folder filter applied
+                    if (!nav.popBackStack(Routes.Library, inclusive = false)) {
+                        nav.navigate(Routes.Library) {
+                            popUpTo(Routes.Unlock) { inclusive = false }
+                            launchSingleTop = true
+                        }
+                    }
+                },
+                onCreateFolder = { name ->
+                    scope.launch {
+                        val result = repository.createFolder(name)
+                        statusMessage = result.fold(
+                            onSuccess = { "Created “${it.name}”" },
+                            onFailure = { "Could not create folder: ${it.message}" },
+                        )
+                    }
+                },
+                onDeleteFolder = { folder ->
+                    scope.launch {
+                        repository.deleteFolder(folder.id)
+                        if (currentFolderId == folder.id) {
+                            currentFolderId = null
+                            currentFolderName = null
+                        }
+                        statusMessage = "Deleted folder “${folder.name}”"
+                    }
+                },
             )
         }
         composable(Routes.Settings) {
@@ -266,8 +478,22 @@ fun VaultNav(
                     session.lock()
                 },
                 onOpenTrash = { nav.navigate(Routes.Trash) },
+                onOpenFolders = { nav.navigate(Routes.Folders) },
                 idleTimeoutMs = idleTimeoutMs,
                 onIdleTimeoutSelected = { autoLock.setIdleTimeoutMs(it) },
+                biometricHardwareAvailable = biometricHardware,
+                biometricEnabled = biometricEnabled,
+                onBiometricToggle = { enable ->
+                    if (enable) {
+                        promptEnableBiometric()
+                    } else {
+                        BiometricVault.disable(context)
+                        biometricEnabled = false
+                        biometricError = null
+                        statusMessage = "Biometric unlock disabled"
+                    }
+                },
+                biometricError = biometricError,
             )
         }
         composable(Routes.Trash) {
@@ -301,7 +527,6 @@ fun VaultNav(
             arguments = listOf(navArgument("id") { type = NavType.StringType }),
         ) { entry ->
             val id = entry.arguments?.getString("id") ?: return@composable
-            // Prefer live library item so favorite toggles refresh; fall back to fetch
             val fromLibrary = items.find { it.id == id }
             var fetched by remember(id) { mutableStateOf<VaultItem?>(null) }
             LaunchedEffect(id, fromLibrary) {
@@ -332,10 +557,36 @@ fun VaultNav(
                             nav.popBackStack()
                         }
                     },
+                    onMoveToFolder = { vaultItem ->
+                        moveItemIds = listOf(vaultItem.id)
+                    },
                     onPlaybackActive = { active -> autoLock.setPlaybackActive(active) },
                     onPlayerCreated = { p -> activePlayers = activePlayers + p },
                 )
             }
         }
+    }
+
+    moveItemIds?.let { ids ->
+        MoveToFolderDialog(
+            folders = folders,
+            onDismiss = { moveItemIds = null },
+            onSelect = { folderId ->
+                scope.launch {
+                    ids.forEach { repository.setItemFolder(it, folderId) }
+                    val label = if (folderId == null) {
+                        "library root"
+                    } else {
+                        folders.find { it.id == folderId }?.name ?: "folder"
+                    }
+                    statusMessage = if (ids.size == 1) {
+                        "Moved to $label"
+                    } else {
+                        "Moved ${ids.size} items to $label"
+                    }
+                    moveItemIds = null
+                }
+            },
+        )
     }
 }

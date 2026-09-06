@@ -5,11 +5,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -32,6 +36,8 @@ fun UnlockScreen(
     lockedOutMs: Long,
     errorMessage: String?,
     onSubmitPin: (String) -> Unit,
+    biometricAvailable: Boolean = false,
+    onBiometricUnlock: (() -> Unit)? = null,
 ) {
     var pin by remember { mutableStateOf("") }
     var remaining by remember { mutableStateOf(lockedOutMs) }
@@ -41,6 +47,14 @@ fun UnlockScreen(
         while (remaining > 0) {
             delay(250)
             remaining = (remaining - 250).coerceAtLeast(0)
+        }
+    }
+
+    // Auto-prompt biometrics once when available and not locked out
+    LaunchedEffect(biometricAvailable, lockedOutMs) {
+        if (biometricAvailable && lockedOutMs <= 0L && onBiometricUnlock != null) {
+            delay(300)
+            onBiometricUnlock()
         }
     }
 
@@ -83,6 +97,23 @@ fun UnlockScreen(
                 color = VaultDanger,
                 style = MaterialTheme.typography.bodyMedium,
             )
+        }
+        if (biometricAvailable && onBiometricUnlock != null && enabled) {
+            Spacer(Modifier.height(16.dp))
+            IconButton(
+                onClick = onBiometricUnlock,
+                modifier = Modifier.size(56.dp),
+            ) {
+                Icon(
+                    Icons.Default.Fingerprint,
+                    contentDescription = "Unlock with biometrics",
+                    tint = VaultAccent,
+                    modifier = Modifier.size(40.dp),
+                )
+            }
+            TextButton(onClick = onBiometricUnlock) {
+                Text("Unlock with biometrics", color = VaultAccent)
+            }
         }
         Spacer(Modifier.weight(1f))
         PinPad(

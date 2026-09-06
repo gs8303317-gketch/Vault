@@ -1,26 +1,25 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **Phase 1 continuation (v0.2.2)** — Info sheet, immersive media viewer, favorites, trash, and multi-select on top of the Phase 1 library UX.
+Offline encrypted personal workspace for Android. **Phase 1 power features (v0.3.0)** — folders + biometric unlock on top of the Phase 1 library UX.
 
-## What this release adds (v0.2.2 / versionCode 6)
+## What this release adds
 
-- **PDF fix**: render onto opaque white bitmap + white page card (no dark/blue unreadable pages); pinch-zoom; sharper scale; PDF library thumbs on import
-- **Auto-lock idle** presets in Settings (background still locks immediately)
+- **PDF zoom pan**: clamped bounds + transformable gestures; pager swipe disabled while zoomed (no more drifting page)
 
-### Also in 0.2.1
+## Also in this release (v0.3.0 / versionCode 7)
 
+- **Folders**: encrypted folder names (NameCipher under VMK); create / open / delete; move items from viewer or multi-select; deleting a folder returns its items to the main library (not trash). Room DB **version 3** (+ `vault_folders` table, `folderId` on items). Still uses `fallbackToDestructiveMigration()` — **upgrading wipes the local Room DB** (re-import after upgrade on early builds).
+- **Biometric unlock**: optional BIOMETRIC_STRONG Keystore wrap of the VMK (`vault.bio`); Settings toggle; Unlock screen fingerprint / “Unlock with biometrics”; PIN remains the always-available fallback. Toggle hidden when no strong biometric hardware.
+- Library top-bar **Folders** entry; Settings → Folders; import into the open folder when a folder filter is active.
 
-- **Info sheet**: Viewer overflow → Info opens a Material3 bottom sheet (name, category, MIME, human size, created date, file id, thumbnail yes/no)
-- **Immersive IMAGE/VIDEO viewer**: black full-bleed background; top bar overlays content (no Scaffold padding letterboxing); tap image to toggle chrome; auto-hide chrome after ~3s while video plays; ExoPlayer `RESIZE_MODE_FIT` + keep-screen-on
-- **Image polish**: ContentScale.Fit on black; pinch-zoom; double-tap toggles 1× / 2.5×
-- **Favorites**: `favorite` flag on vault items; star toggle on library cards; ★ Favorites filter chip; Favorite / Unfavorite in viewer menu
-- **Trash**: soft-delete via `deletedAt`; Settings → Trash screen with Restore / Delete forever / Empty trash; Move to trash from viewer (confirm) and multi-select
-- **Multi-select (MVP)**: long-press enters selection mode; checkmarks; top bar count + Delete (to trash) + Cancel (no bulk export yet)
-- Room DB **version 2** (+ `favorite` column). Still uses `fallbackToDestructiveMigration()` — **upgrading from v1 wipes the local Room DB** (re-import files after upgrade on early builds)
+### Also in 0.2.x
+
+- PDF opaque white render + pinch-zoom; library thumbs; auto-lock idle presets
+- Info sheet; immersive IMAGE/VIDEO viewer; favorites; trash; multi-select MVP
+- Category chips + search + grid thumbnails; 4-digit PIN; VAULT1 AES-GCM; SAF import/export
 
 ## What still works
 
-- Category chips + client-side name search + grid thumbnails
 - 4-digit PIN setup / unlock (weak PINs rejected, progressive lockout)
 - VAULT1 chunked AES-256-GCM containers + PBKDF2-HMAC-SHA256 (210 000 iterations)
 - SAF multi-file import with streaming encrypt; SAF export with unencrypted-copy confirmation
@@ -31,11 +30,12 @@ Offline encrypted personal workspace for Android. **Phase 1 continuation (v0.2.2
 
 ## Not in this slice (later)
 
-Folders UI, biometric unlock, bulk export, auto-lock settings UI, tablet two-pane, import cancel/resume, image editor, Office preview, cloud sync, calculator disguise, PIN recovery, proper Room migrations (non-destructive).
+Nested folders UI polish, bulk export, tablet two-pane, import cancel/resume, image editor, Office preview, cloud sync, calculator disguise, PIN recovery, proper Room migrations (non-destructive), FLAG_SECURE.
 
 ## Limitations (honest)
 
-- **Destructive DB migration on upgrade to v0.2.1**: Room schema wipe via `fallbackToDestructiveMigration` — early-app OK; re-import after upgrade if you had data on v0.2.0
+- **Destructive DB migration on upgrade to v0.3.0**: Room schema wipe via `fallbackToDestructiveMigration` — early-app OK; re-import after upgrade if you had data on v0.2.x
+- Biometric wrap is invalidated if biometrics are re-enrolled on the device (`setInvalidatedByBiometricEnrollment`); re-enable from Settings after PIN unlock
 - Rooted / unlocked session can read vault memory and files
 - Screenshots of unlocked screens work (intentional for testing in P0–P3)
 - PIN cannot be recovered — clear data destroys the vault

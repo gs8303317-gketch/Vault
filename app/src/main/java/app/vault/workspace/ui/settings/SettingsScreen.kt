@@ -8,6 +8,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -20,6 +22,8 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -43,8 +47,13 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onLockNow: () -> Unit,
     onOpenTrash: () -> Unit,
+    onOpenFolders: () -> Unit,
     idleTimeoutMs: Long,
     onIdleTimeoutSelected: (Long) -> Unit,
+    biometricHardwareAvailable: Boolean = false,
+    biometricEnabled: Boolean = false,
+    onBiometricToggle: (Boolean) -> Unit = {},
+    biometricError: String? = null,
 ) {
     var showIdlePicker by remember { mutableStateOf(false) }
     val idleLabel = AutoLockController.PRESETS.firstOrNull { it.first == idleTimeoutMs }?.second
@@ -95,6 +104,47 @@ fun SettingsScreen(
                     )
                 },
                 modifier = Modifier.clickable { showIdlePicker = true },
+            )
+            HorizontalDivider()
+            if (biometricHardwareAvailable) {
+                ListItem(
+                    headlineContent = { Text("Biometric unlock") },
+                    supportingContent = {
+                        Text(
+                            biometricError
+                                ?: "Unlock with fingerprint or face. PIN always works as fallback.",
+                            color = if (biometricError != null) VaultDanger else VaultTextMuted,
+                        )
+                    },
+                    leadingContent = {
+                        Icon(Icons.Default.Fingerprint, contentDescription = null, tint = VaultAccent)
+                    },
+                    trailingContent = {
+                        Switch(
+                            checked = biometricEnabled,
+                            onCheckedChange = onBiometricToggle,
+                            colors = SwitchDefaults.colors(checkedTrackColor = VaultAccent),
+                        )
+                    },
+                )
+                HorizontalDivider()
+            }
+            ListItem(
+                headlineContent = { Text("Folders") },
+                supportingContent = {
+                    Text("Organize items into encrypted-name folders", color = VaultTextMuted)
+                },
+                leadingContent = {
+                    Icon(Icons.Default.Folder, contentDescription = null, tint = VaultAccent)
+                },
+                trailingContent = {
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = VaultTextMuted,
+                    )
+                },
+                modifier = Modifier.clickable(onClick = onOpenFolders),
             )
             HorizontalDivider()
             ListItem(

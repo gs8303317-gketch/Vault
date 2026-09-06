@@ -17,6 +17,8 @@ data class VaultItemEntity(
     val dekWrap: ByteArray,
     val hasThumb: Boolean = false,
     val favorite: Boolean = false,
+    /** Nullable folder membership; null = unfiled / root. */
+    val folderId: String? = null,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -30,7 +32,8 @@ data class VaultItemEntity(
             deletedAt == other.deletedAt &&
             dekWrap.contentEquals(other.dekWrap) &&
             hasThumb == other.hasThumb &&
-            favorite == other.favorite
+            favorite == other.favorite &&
+            folderId == other.folderId
     }
 
     override fun hashCode(): Int {
@@ -44,6 +47,7 @@ data class VaultItemEntity(
         result = 31 * result + dekWrap.contentHashCode()
         result = 31 * result + hasThumb.hashCode()
         result = 31 * result + favorite.hashCode()
+        result = 31 * result + (folderId?.hashCode() ?: 0)
         return result
     }
 }

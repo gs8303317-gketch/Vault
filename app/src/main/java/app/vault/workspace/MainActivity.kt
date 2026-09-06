@@ -1,7 +1,7 @@
 package app.vault.workspace
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,7 +14,7 @@ import app.vault.workspace.ui.theme.VaultTheme
 /**
  * Thin activity — no FLAG_SECURE in Phase 0 (screenshots allowed for testing).
  */
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()

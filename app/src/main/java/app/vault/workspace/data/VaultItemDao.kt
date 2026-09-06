@@ -11,6 +11,17 @@ interface VaultItemDao {
     @Query("SELECT * FROM vault_items WHERE deletedAt IS NULL ORDER BY createdAt DESC")
     fun observeAll(): Flow<List<VaultItemEntity>>
 
+    @Query(
+        """
+        SELECT * FROM vault_items
+        WHERE deletedAt IS NULL AND (
+            (:folderId IS NULL AND folderId IS NULL) OR folderId = :folderId
+        )
+        ORDER BY createdAt DESC
+        """,
+    )
+    fun observeItemsInFolder(folderId: String?): Flow<List<VaultItemEntity>>
+
     @Query("SELECT * FROM vault_items WHERE deletedAt IS NOT NULL ORDER BY deletedAt DESC")
     fun observeTrash(): Flow<List<VaultItemEntity>>
 
@@ -31,6 +42,12 @@ interface VaultItemDao {
 
     @Query("UPDATE vault_items SET favorite = :favorite WHERE id = :id")
     suspend fun setFavorite(id: String, favorite: Boolean)
+
+    @Query("UPDATE vault_items SET folderId = :folderId WHERE id = :id")
+    suspend fun setItemFolder(id: String, folderId: String?)
+
+    @Query("UPDATE vault_items SET folderId = NULL WHERE folderId = :folderId")
+    suspend fun clearFolderFromItems(folderId: String)
 
     @Query("DELETE FROM vault_items WHERE id = :id")
     suspend fun hardDelete(id: String)

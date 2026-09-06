@@ -23,6 +23,13 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
 
+data class VaultFolder(
+    val id: String,
+    val name: String,
+    val createdAt: Long,
+    val parentId: String? = null,
+)
+
 data class VaultItem(
     val id: String,
     val displayName: String,
@@ -33,12 +40,14 @@ data class VaultItem(
     val hasThumb: Boolean,
     val favorite: Boolean = false,
     val deletedAt: Long? = null,
+    val folderId: String? = null,
 )
 
 class VaultRepository(
     private val context: Context,
     private val session: SessionManager,
     private val dao: VaultItemDao = VaultDatabase.get(context).vaultItemDao(),
+    private val folderDao: VaultFolderDao = VaultDatabase.get(context).vaultFolderDao(),
 ) {
     private fun mapEntity(entity: VaultItemEntity, vmk: ByteArray): VaultItem? =
         try {
@@ -53,16 +62,102 @@ class VaultRepository(
                 hasThumb = entity.hasThumb,
                 favorite = entity.favorite,
                 deletedAt = entity.deletedAt,
+                folderId = entity.folderId,
             )
         } catch (_: Exception) {
             null
         }
 
-    fun observeLibrary(): Flow<List<VaultItem>> =
-        dao.observeAll().map { list ->
+    /**
+     * @param folderId null = all non-deleted items (default library).
+     *                 Non-null = items in that folder only.
+     */
+    fun observeLibrary(folderId: String? = null): Flow<List<VaultItem>> {
+        val source = if (folderId == null) dao.observeAll() else dao.observeItemsInFolder(folderId)
+        return source.map { list ->
             val vmk = session.peekVmk() ?: return@map emptyList()
             list.mapNotNull { mapEntity(it, vmk) }
         }
+    }
+
+    fun observeFolders(): Flow<List<VaultFolder>> =
+        folderDao.observeFolders().map { list ->
+            val vmk = session.peekVmk() ?: return@map emptyList()
+            list.mapNotNull { entity ->
+                try {
+                    VaultFolder(
+                        id = entity.id,
+                        name = NameCipher.decrypt(vmk, entity.nameCipher),
+                        createdAt = entity.createdAt,
+                        parentId = entity.parentId,
+                    )
+                } catch (_: Exception) {
+                    null
+                }
+            }
+        }
+
+    suspend fun createFolder(name: String, parentId: String? = null): Result<VaultFolder> =
+        withContext(Dispatchers.IO) {
+            try {
+                val trimmed = name.trim()
+                if (trimmed.isEmpty()) {
+                    return@withContext Result.failure(IllegalArgumentException("Folder name required"))
+                }
+                val vmk = session.requireVmk()
+                val id = UUID.randomUUID().toString()
+                val createdAt = System.currentTimeMillis()
+                val entity = VaultFolderEntity(
+                    id = id,
+                    nameCipher = NameCipher.encrypt(vmk, trimmed),
+                    createdAt = createdAt,
+                    parentId = parentId,
+                )
+                folderDao.insertFolder(entity)
+                Result.success(VaultFolder(id, trimmed, createdAt, parentId))
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+        }
+
+    suspend fun renameFolder(id: String, name: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val trimmed = name.trim()
+            if (trimmed.isEmpty()) {
+                return@withContext Result.failure(IllegalArgumentException("Folder name required"))
+            }
+            val vmk = session.requireVmk()
+            folderDao.renameFolder(id, NameCipher.encrypt(vmk, trimmed))
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /** Move folder items to root (unfiled), then delete the folder row. */
+    suspend fun deleteFolder(id: String) = withContext(Dispatchers.IO) {
+        dao.clearFolderFromItems(id)
+        folderDao.deleteFolder(id)
+    }
+
+    suspend fun setItemFolder(itemId: String, folderId: String?) = withContext(Dispatchers.IO) {
+        dao.setItemFolder(itemId, folderId)
+    }
+
+    suspend fun getFolder(id: String): VaultFolder? = withContext(Dispatchers.IO) {
+        val entity = folderDao.getById(id) ?: return@withContext null
+        val vmk = session.requireVmk()
+        try {
+            VaultFolder(
+                id = entity.id,
+                name = NameCipher.decrypt(vmk, entity.nameCipher),
+                createdAt = entity.createdAt,
+                parentId = entity.parentId,
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     fun observeTrashItems(): Flow<List<VaultItem>> =
         dao.observeTrash().map { list ->
@@ -160,6 +255,7 @@ class VaultRepository(
                         createdAt = entity.createdAt,
                         hasThumb = hasThumb,
                         favorite = false,
+                        folderId = null,
                     ),
                 )
             } catch (e: Exception) {

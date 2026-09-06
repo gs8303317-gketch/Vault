@@ -106,6 +106,33 @@ class SessionManager(private val context: Context) {
         }
     }
 
+    /**
+     * Complete unlock after biometric unwrap of VMK.
+     * Does not touch lockout counters (biometric is a second factor over an already-enrolled wrap).
+     */
+    fun unlockWithVmk(unlockedVmk: ByteArray): Result<Unit> {
+        if (!isSetupComplete) {
+            return Result.failure(CorruptHeaderException())
+        }
+        if (lockout.isLocked()) {
+            return Result.failure(LockedOutException(lockout.remainingLockMs()))
+        }
+        return try {
+            require(unlockedVmk.size == KeyHierarchy.KEY_SIZE_BYTES)
+            KeyHierarchy.wipe(vmk)
+            vmk = unlockedVmk.copyOf()
+            KeyHierarchy.wipe(unlockedVmk)
+            lockout.recordSuccess()
+            ensureDirs()
+            _state.value = SessionState.Unlocked
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun bioFile(): File = File(File(vaultRoot(), "header").also { it.mkdirs() }, "vault.bio")
+
     fun requireVmk(): ByteArray {
         val key = vmk ?: throw IllegalStateException("Vault is locked")
         return key

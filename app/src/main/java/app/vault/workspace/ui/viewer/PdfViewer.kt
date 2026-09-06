@@ -9,8 +9,11 @@ import android.graphics.pdf.PdfRenderer
 import android.os.ParcelFileDescriptor
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -43,11 +46,12 @@ import app.vault.workspace.ui.theme.VaultTextMuted
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import kotlin.math.max
 
 /**
  * PDF pages must be rendered onto an opaque white bitmap.
- * A fresh ARGB bitmap is transparent black; PdfRenderer blends into it and
- * pages look dark/blue and unreadable on a dark app theme.
+ * Zoom pan is clamped to content bounds; pager swipe is disabled while zoomed
+ * so gestures don't fight and the page doesn't drift off-screen.
  */
 @Composable
 fun PdfViewer(
@@ -61,6 +65,7 @@ fun PdfViewer(
     var renderer by remember { mutableStateOf<PdfRenderer?>(null) }
     var pfd by remember { mutableStateOf<ParcelFileDescriptor?>(null) }
     val density = LocalDensity.current.density
+    var pageZoomed by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         try {
@@ -95,16 +100,25 @@ fun PdfViewer(
             renderer == null -> CircularProgressIndicator(color = VaultAccent)
             else -> {
                 val pagerState = rememberPagerState(pageCount = { pageCount })
+                LaunchedEffect(pagerState.currentPage) {
+                    pageZoomed = false
+                }
                 Column(Modifier.fillMaxSize()) {
                     HorizontalPager(
                         state = pagerState,
                         modifier = Modifier.weight(1f),
-                        userScrollEnabled = true,
+                        userScrollEnabled = !pageZoomed,
+                        beyondViewportPageCount = 0,
                     ) { page ->
                         PdfPage(
                             renderer = renderer!!,
                             pageIndex = page,
                             scaleFactor = (density * 2.5f).coerceIn(2f, 3.5f),
+                            onZoomedChanged = { zoomed ->
+                                if (page == pagerState.currentPage) {
+                                    pageZoomed = zoomed
+                                }
+                            },
                         )
                     }
                     Text(
@@ -125,55 +139,89 @@ private fun PdfPage(
     renderer: PdfRenderer,
     pageIndex: Int,
     scaleFactor: Float,
+    onZoomedChanged: (Boolean) -> Unit,
 ) {
     var bitmap by remember(pageIndex, scaleFactor) { mutableStateOf<Bitmap?>(null) }
     var scale by remember(pageIndex) { mutableFloatStateOf(1f) }
     var offset by remember(pageIndex) { mutableStateOf(Offset.Zero) }
 
     LaunchedEffect(pageIndex, scaleFactor) {
-        val bmp = withContext(Dispatchers.IO) {
+        bitmap = withContext(Dispatchers.IO) {
             renderPdfPage(renderer, pageIndex, scaleFactor)
         }
-        bitmap = bmp
+        scale = 1f
+        offset = Offset.Zero
+        onZoomedChanged(false)
     }
 
-    DisposableEffect(pageIndex) {
-        onDispose {
-            // Don't recycle while pager may still hold reference briefly; GC is fine for page bitmaps
-        }
+    LaunchedEffect(scale) {
+        onZoomedChanged(scale > 1.02f)
     }
 
-    Box(
+    BoxWithConstraints(
         Modifier
             .fillMaxSize()
             .padding(12.dp),
         contentAlignment = Alignment.Center,
     ) {
+        val containerW = constraints.maxWidth.toFloat().coerceAtLeast(1f)
+        val containerH = constraints.maxHeight.toFloat().coerceAtLeast(1f)
         val bmp = bitmap
+
         if (bmp != null) {
+            val fitted = remember(bmp.width, bmp.height, containerW, containerH) {
+                fitSize(bmp.width.toFloat(), bmp.height.toFloat(), containerW, containerH)
+            }
+
+            fun clampOffset(raw: Offset, s: Float): Offset {
+                if (s <= 1.02f) return Offset.Zero
+                val scaledW = fitted.first * s
+                val scaledH = fitted.second * s
+                val maxX = max(0f, (scaledW - containerW) / 2f)
+                val maxY = max(0f, (scaledH - containerH) / 2f)
+                return Offset(
+                    raw.x.coerceIn(-maxX, maxX),
+                    raw.y.coerceIn(-maxY, maxY),
+                )
+            }
+
+            val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+                val newScale = (scale * zoomChange).coerceIn(1f, 5f)
+                scale = newScale
+                offset = clampOffset(offset + panChange, newScale)
+            }
+
             Box(
                 Modifier
-                    .fillMaxWidth()
-                    .background(Color.White, RoundedCornerShape(4.dp))
-                    .padding(2.dp),
+                    .fillMaxSize()
+                    .background(Color.White, RoundedCornerShape(4.dp)),
+                contentAlignment = Alignment.Center,
             ) {
                 Image(
                     bitmap = bmp.asImageBitmap(),
                     contentDescription = "PDF page ${pageIndex + 1}",
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .fillMaxSize()
                         .graphicsLayer(
                             scaleX = scale,
                             scaleY = scale,
                             translationX = offset.x,
                             translationY = offset.y,
                         )
+                        .transformable(state = transformState, lockRotationOnZoomPan = true)
                         .pointerInput(pageIndex) {
-                            detectTransformGestures { _, pan, zoom, _ ->
-                                scale = (scale * zoom).coerceIn(1f, 5f)
-                                offset = if (scale <= 1.01f) Offset.Zero else offset + pan
-                            }
+                            detectTapGestures(
+                                onDoubleTap = {
+                                    if (scale > 1.05f) {
+                                        scale = 1f
+                                        offset = Offset.Zero
+                                    } else {
+                                        scale = 2.5f
+                                        offset = Offset.Zero
+                                    }
+                                },
+                            )
                         },
                 )
             }
@@ -181,6 +229,11 @@ private fun PdfPage(
             CircularProgressIndicator(color = VaultAccent)
         }
     }
+}
+
+private fun fitSize(srcW: Float, srcH: Float, maxW: Float, maxH: Float): Pair<Float, Float> {
+    val scale = minOf(maxW / srcW, maxH / srcH)
+    return (srcW * scale) to (srcH * scale)
 }
 
 internal fun renderPdfPage(
@@ -193,7 +246,6 @@ internal fun renderPdfPage(
             val w = (page.width * scaleFactor).toInt().coerceAtLeast(1)
             val h = (page.height * scaleFactor).toInt().coerceAtLeast(1)
             val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-            // Opaque white canvas — required for correct PdfRenderer colors
             bmp.eraseColor(AndroidColor.WHITE)
             Canvas(bmp).drawColor(AndroidColor.WHITE)
             page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)

@@ -23,11 +23,11 @@ android {
         applicationId = "app.vault.workspace"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.2.2"
+        versionCode = 7
+        versionName = "0.3.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "VERSION_NAME", "\"0.2.2\"")
-        buildConfigField("int", "VERSION_CODE", "6")
+        buildConfigField("String", "VERSION_NAME", "\"0.3.0\"")
+        buildConfigField("int", "VERSION_CODE", "7")
     }
 
     signingConfigs {
@@ -109,6 +109,8 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     implementation("androidx.navigation:navigation-compose:2.8.5")
+
+    implementation("androidx.biometric:biometric:1.1.0")
 
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
