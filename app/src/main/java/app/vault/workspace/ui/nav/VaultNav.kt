@@ -94,6 +94,7 @@ fun VaultNav(
     var unlockError by remember { mutableStateOf<String?>(null) }
     var lockoutMs by remember { mutableLongStateOf(0L) }
     var importing by remember { mutableStateOf(false) }
+    var importProgress by remember { mutableStateOf<Pair<String, Float>?>(null) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var items by remember { mutableStateOf<List<VaultItem>>(emptyList()) }
     var trashItems by remember { mutableStateOf<List<VaultItem>>(emptyList()) }
@@ -187,9 +188,12 @@ fun VaultNav(
             return@LaunchedEffect
         }
         importing = true
-        statusMessage = "Importing shared file(s)…"
+        importProgress = "Importing shared file(s)…" to 0f
         try {
-            val result = importController.importAll(uris)
+            val result = importController.importAll(uris) { index, total, frac ->
+                val overall = if (total <= 0) frac else (index + frac) / total
+                importProgress = "Importing ${index + 1} of $total…" to overall.coerceIn(0f, 1f)
+            }
             shareUrisForJob = emptyList()
             val folderId = currentFolderId
             if (folderId != null) {
@@ -213,6 +217,7 @@ fun VaultNav(
             shareUrisForJob = emptyList()
         } finally {
             importing = false
+            importProgress = null
             autoLock.setDeferBackgroundLock(false)
             autoLock.bumpIdle()
         }
@@ -349,9 +354,13 @@ fun VaultNav(
         }
         scope.launch {
             importing = true
-            statusMessage = "Importing ${uris.size} file(s)…"
+            importProgress = "Importing ${uris.size} file(s)…" to 0f
             try {
-                val result = importController.importAll(uris)
+                val result = importController.importAll(uris) { index, total, frac ->
+                    val overall = if (total <= 0) frac else (index + frac) / total
+                    importProgress =
+                        "Importing ${index + 1} of $total…" to overall.coerceIn(0f, 1f)
+                }
                 // If viewing a folder, place new imports there
                 val folderId = currentFolderId
                 if (folderId != null) {
@@ -371,6 +380,7 @@ fun VaultNav(
                 statusMessage = "Import failed: ${e.message ?: "error"}"
             } finally {
                 importing = false
+                importProgress = null
             }
         }
     }
@@ -538,6 +548,7 @@ fun VaultNav(
             LibraryScreen(
                 items = items,
                 importing = importing,
+                importProgress = importProgress,
                 statusMessage = statusMessage,
                 onDismissStatus = { statusMessage = null },
                 onImport = {

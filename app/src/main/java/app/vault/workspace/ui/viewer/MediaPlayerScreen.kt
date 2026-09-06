@@ -7,6 +7,9 @@ import android.media.AudioManager
 import android.view.HapticFeedbackConstants
 import android.view.ViewGroup
 import android.view.WindowManager
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import android.widget.FrameLayout
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -223,6 +226,23 @@ private fun PremiumPlayerOverlay(
         }
     }
 
+    // Immersive playback: hide phone status/nav bars (swipe edge to peek).
+    DisposableEffect(isAudio, activity, view) {
+        if (isAudio || activity == null) {
+            onDispose { }
+        } else {
+            val controller = WindowCompat.getInsetsController(activity.window, view)
+            val prior = controller.systemBarsBehavior
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+            controller.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            onDispose {
+                controller.show(WindowInsetsCompat.Type.systemBars())
+                controller.systemBarsBehavior = prior
+            }
+        }
+    }
+
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
     var isPlaying by remember { mutableStateOf(player.isPlaying) }
@@ -239,6 +259,7 @@ private fun PremiumPlayerOverlay(
     var speedBoostActive by remember { mutableStateOf(false) }
 
     var gesturesLocked by remember { mutableStateOf(false) }
+    var lockChromeVisible by remember { mutableStateOf(false) }
     var baseSpeed by remember { mutableFloatStateOf(1f) }
     var speedMenuOpen by remember { mutableStateOf(false) }
     var fitMode by remember { mutableStateOf(VideoFitMode.FIT) }
@@ -329,6 +350,12 @@ private fun PremiumPlayerOverlay(
             seekOverlayMs = null
         }
     }
+    LaunchedEffect(lockChromeVisible, gesturesLocked) {
+        if (gesturesLocked && lockChromeVisible) {
+            delay(2_500)
+            lockChromeVisible = false
+        }
+    }
     LaunchedEffect(lockHintTick) {
         if (lockHintTick > 0) {
             delay(1_200)
@@ -386,8 +413,10 @@ private fun PremiumPlayerOverlay(
         view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
         if (gesturesLocked) {
             controlsVisible = false
+            lockChromeVisible = true
             lockHintTick = lockHintTick + 1
         } else {
+            lockChromeVisible = false
             showControls()
         }
     }
@@ -469,6 +498,8 @@ private fun PremiumPlayerOverlay(
                         var mode = 0 // 0 undecided, 1 vertical, 2 horizontal
                         var dragged = false
                         var gestureSeekAccum = 0L
+                        var seekBasePos = 0L
+                        var pendingSeekTarget = -1L
                         var gestureVol = volumeFraction
                         var gestureBright = brightness
                         var longPressArmed = !gesturesLocked
@@ -520,7 +551,9 @@ private fun PremiumPlayerOverlay(
                                     gestureVol = volumeFraction
                                     gestureBright = brightness
                                     if (mode == 2) {
+                                        seekBasePos = player.currentPosition.coerceAtLeast(0L)
                                         gestureSeekAccum = 0L
+                                        pendingSeekTarget = seekBasePos
                                         seekOverlayMs = 0L
                                     }
                                 }
@@ -537,16 +570,15 @@ private fun PremiumPlayerOverlay(
                                     }
                                     2 -> {
                                         val dur = player.duration
-                                        if (dur > 0 && dx != 0f) {
-                                            val deltaMs = ((dx / width) * dur).toLong()
-                                            if (deltaMs != 0L) {
-                                                val target = (player.currentPosition + deltaMs)
-                                                    .coerceIn(0L, dur)
-                                                player.seekTo(target)
-                                                positionMs = target
-                                                gestureSeekAccum += deltaMs
-                                                seekOverlayMs = gestureSeekAccum
-                                            }
+                                        if (dur > 0) {
+                                            // Absolute scrub from gesture start — avoids
+                                            // currentPosition lag resetting seek to 0.
+                                            val deltaMs = ((totalDx / width) * dur).toLong()
+                                            val target = (seekBasePos + deltaMs).coerceIn(0L, dur)
+                                            pendingSeekTarget = target
+                                            positionMs = target
+                                            gestureSeekAccum = deltaMs
+                                            seekOverlayMs = deltaMs
                                         }
                                     }
                                 }
@@ -558,6 +590,7 @@ private fun PremiumPlayerOverlay(
                                 }
                                 if (gesturesLocked) {
                                     if (!dragged) {
+                                        lockChromeVisible = true
                                         lockHintTick = lockHintTick + 1
                                     }
                                     break
@@ -575,6 +608,10 @@ private fun PremiumPlayerOverlay(
                                         controlsVisible = !controlsVisible
                                     }
                                 } else {
+                                    if (mode == 2 && pendingSeekTarget >= 0L) {
+                                        player.seekTo(pendingSeekTarget)
+                                        positionMs = pendingSeekTarget
+                                    }
                                     showControls()
                                     lastTapTime = 0L
                                 }
@@ -630,7 +667,7 @@ private fun PremiumPlayerOverlay(
             OverlayChip(text = "2×", large = true)
         }
         AnimatedVisibility(
-            visible = gesturesLocked && lockHintTick > 0,
+            visible = gesturesLocked && lockChromeVisible && lockHintTick > 0,
             enter = fadeIn() + scaleIn(initialScale = 0.9f),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.Center),
@@ -638,7 +675,7 @@ private fun PremiumPlayerOverlay(
             OverlayChip(text = "Locked — tap unlock")
         }
 
-        if (gesturesLocked) {
+        if (gesturesLocked && lockChromeVisible) {
             IconButton(
                 onClick = { toggleLock() },
                 modifier = Modifier

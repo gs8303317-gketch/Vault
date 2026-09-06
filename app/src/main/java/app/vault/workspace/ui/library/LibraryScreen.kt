@@ -46,12 +46,16 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.VideoFile
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -99,11 +103,19 @@ import app.vault.workspace.ui.theme.VaultSurface
 import app.vault.workspace.ui.theme.VaultText
 import app.vault.workspace.ui.theme.VaultTextMuted
 
+enum class LibrarySort(val label: String) {
+    NEWEST("Newest first"),
+    OLDEST("Oldest first"),
+    NAME_AZ("Name A–Z"),
+    NAME_ZA("Name Z–A"),
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun LibraryScreen(
     items: List<VaultItem>,
     importing: Boolean,
+    importProgress: Pair<String, Float>? = null,
     statusMessage: String? = null,
     onDismissStatus: () -> Unit = {},
     onImport: () -> Unit,
@@ -123,6 +135,8 @@ fun LibraryScreen(
     var favoritesOnly by remember { mutableStateOf(false) }
     var selectionMode by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var sort by remember { mutableStateOf(LibrarySort.NEWEST) }
+    var sortMenuOpen by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
     LaunchedEffect(statusMessage) {
@@ -136,15 +150,22 @@ fun LibraryScreen(
         selectedIds = emptySet()
     }
 
-    val filtered = remember(items, query, selectedCategory, favoritesOnly) {
+    val filtered = remember(items, query, selectedCategory, favoritesOnly, sort) {
         val q = query.trim()
-        items.filter { item ->
+        val base = items.filter { item ->
             val catOk = selectedCategory == null || item.category == selectedCategory
             val favOk = !favoritesOnly || item.favorite
             val nameOk = q.isEmpty() || item.displayName.contains(q, ignoreCase = true)
             catOk && favOk && nameOk
         }
+        when (sort) {
+            LibrarySort.NEWEST -> base.sortedByDescending { it.createdAt }
+            LibrarySort.OLDEST -> base.sortedBy { it.createdAt }
+            LibrarySort.NAME_AZ -> base.sortedBy { it.displayName.lowercase() }
+            LibrarySort.NAME_ZA -> base.sortedByDescending { it.displayName.lowercase() }
+        }
     }
+    val newestId = filtered.firstOrNull()?.id
 
     Scaffold(
         containerColor = VaultBg,
@@ -214,7 +235,36 @@ fun LibraryScreen(
                             }
                         }
                     },
-                    actions = {},
+                    actions = {
+                        Box {
+                            IconButton(onClick = { sortMenuOpen = true }) {
+                                Icon(
+                                    Icons.Default.Sort,
+                                    contentDescription = "Sort",
+                                    tint = VaultAccent,
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = sortMenuOpen,
+                                onDismissRequest = { sortMenuOpen = false },
+                            ) {
+                                LibrarySort.entries.forEach { option ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                option.label,
+                                                color = if (sort == option) VaultAccent else VaultText,
+                                            )
+                                        },
+                                        onClick = {
+                                            sort = option
+                                            sortMenuOpen = false
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = VaultBg),
                 )
             }
@@ -343,6 +393,32 @@ fun LibraryScreen(
 
             Spacer(Modifier.height(8.dp))
 
+            if (importing) {
+                val progress = importProgress
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(VaultSurface)
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                ) {
+                    Text(
+                        progress?.first ?: "Importing…",
+                        color = VaultText,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    LinearProgressIndicator(
+                        progress = { (progress?.second ?: 0f).coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth(),
+                        color = VaultAccent,
+                        trackColor = VaultBg,
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+
             Box(Modifier.fillMaxSize()) {
                 when {
                     items.isEmpty() && !importing -> {
@@ -388,6 +464,7 @@ fun LibraryScreen(
                                     item = item,
                                     selected = item.id in selectedIds,
                                     selectionMode = selectionMode,
+                                    isNew = item.id == newestId && sort == LibrarySort.NEWEST,
                                     onLoadThumb = onLoadThumb,
                                     onClick = {
                                         if (selectionMode) {
@@ -414,12 +491,6 @@ fun LibraryScreen(
                             }
                         }
                     }
-                }
-                if (importing) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.align(Alignment.Center),
-                        color = VaultAccent,
-                    )
                 }
             }
         }
@@ -457,6 +528,7 @@ private fun LibraryCard(
     item: VaultItem,
     selected: Boolean,
     selectionMode: Boolean,
+    isNew: Boolean = false,
     onLoadThumb: suspend (String) -> Bitmap?,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
@@ -538,6 +610,19 @@ private fun LibraryCard(
                         .align(Alignment.Center)
                         .size(36.dp)
                         .padding(bottom = 12.dp),
+                )
+            }
+
+            if (isNew && !selectionMode) {
+                Text(
+                    "NEW",
+                    color = VaultOnAccent,
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(6.dp)
+                        .background(VaultAccent, RoundedCornerShape(6.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
                 )
             }
 

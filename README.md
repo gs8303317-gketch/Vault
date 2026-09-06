@@ -1,6 +1,13 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.3.7** — player chrome/lock/back fixes + landscape PIN unlock.
+Offline encrypted personal workspace for Android. **v0.3.8** — import progress, library sort, immersive player, seek fix.
+
+## What this release adds (v0.3.8 / versionCode 15)
+
+- **Import progress banner**: clear “Importing X of Y” + progress bar (not a tiny spinner).
+- **Library sort**: Newest / Oldest / Name A–Z / Z–A; **NEW** badge on latest item when sorted newest-first.
+- **Immersive video**: hide system status/nav bars while playing; lock unlock chip auto-hides until tap.
+- **Seek fix**: horizontal scrub uses absolute offset from gesture start and commits on release (no jump-to-start).
 
 ## What this release adds (v0.3.7 / versionCode 14)
 
