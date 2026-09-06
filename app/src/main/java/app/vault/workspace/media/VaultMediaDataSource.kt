@@ -8,8 +8,8 @@ import java.io.IOException
 import java.io.RandomAccessFile
 
 /**
- * Note: v0.4.10+ remux uses decrypt-to-file + MediaExtractor(path) instead of this
- * MediaDataSource (OEM hangs on long WEB-DLs). Kept for potential non-remux use.
+ * Note: Path B prepare ([VideoSeekPrepare]) uses decrypt-to-file + MediaExtractor(path)
+ * instead of this MediaDataSource (OEM hangs on long WEB-DLs). Kept unused for now.
  *
  * [MediaDataSource] over a VAULT1 blob — decrypts plaintext ranges on demand for
  * [android.media.MediaExtractor] remux (API 23+; minSdk 26).

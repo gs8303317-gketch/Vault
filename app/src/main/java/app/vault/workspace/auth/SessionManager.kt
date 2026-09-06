@@ -3,6 +3,7 @@ package app.vault.workspace.auth
 import android.content.Context
 import app.vault.workspace.crypto.KeyHierarchy
 import app.vault.workspace.media.PlaybackPlaintextCache
+import app.vault.workspace.media.VideoSeekPrepare
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -217,9 +218,13 @@ class SessionManager(private val context: Context) {
     }
 
     fun wipeTmp() {
-        // playcache dir: legacy playcache_* + v0.4.9+ seek_*.mp4 remux outputs
+        // playcache leftovers + Path B seekprep temps (never leave plaintext)
         try {
             PlaybackPlaintextCache.wipeAll(context)
+        } catch (_: Exception) {
+        }
+        try {
+            VideoSeekPrepare.wipeAll(context)
         } catch (_: Exception) {
         }
         val dir = tmpDir()

@@ -11,9 +11,9 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * Session play-cache directory under `cacheDir/playcache`.
  *
- * Legacy full-plaintext decrypt (`playcache_*`) from v0.4.6–0.4.7 is unused on the
- * playback path. v0.4.10 remux uses short-lived `plain_*.bin` decrypt temps plus
- * `seek_*.mp4` outputs via [SeekableRemuxCache]. [wipeAll] purges all on lock /
+ * Legacy full-plaintext decrypt (`playcache_*`) / seek-time remux leftovers from
+ * earlier builds. Path A playback never writes here. Path B prepare uses
+ * [VideoSeekPrepare] (`cacheDir/seekprep`). [wipeAll] purges leftovers on lock /
  * cold start ([app.vault.workspace.auth.SessionManager.wipeTmp]).
  */
 object PlaybackPlaintextCache {

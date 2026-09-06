@@ -1,6 +1,15 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.4.10** — encryption already seekable (chunked AES-GCM + EncryptedDataSource); WEB-DL needs remux; remux is now decrypt-then-MediaExtractor(path) with progress (fixes stuck “Preparing seek…”).
+Offline encrypted personal workspace for Android. **v0.4.11** — final seek architecture: Path A play = EncryptedDataSource only; Path B prepare once (import/first open) for unseekable containers; no seek-time remux / no “Preparing seek…” on scrub.
+
+## What this release adds (v0.4.11 / versionCode 28)
+
+- **Diagnosis agreed**: chunked AES-GCM + `EncryptedDataSource(DataSpec.position)` already OK — encryption does **not** block seek. Problem is container/index (WEB-DL moov-at-end / fMP4 no sidx/mfra / MPEG-TS).
+- **Path A — Play (every time)**: encrypted `.vat` → `EncryptedDataSource` → ExoPlayer only. No remux, no full decrypt, no plaintext on disk, no seek-time prepare.
+- **Path B — Prepare (once, background)**: only when probe says unseekable. Trigger at **import** (preferred) and/or **first play open**. **Never** on seek scrub/slider. Cheapest repair first: (1) moov-at-end → faststart, (2) else `MediaExtractor`+`MediaMuxer` A/V remux, (3) MPEG-TS → MP4 remux. Then **re-encrypt** progressive MP4 into the item blob (atomic replace `.vat`, same DEK wrap / id), wipe private temps, set `seekReady=true`. Next plays use Path A on the new ciphertext.
+- **DB**: `seekReady` on `VaultItemEntity` / `VaultItem` (default true for non-video; video import starts false). Room **v4** (`fallbackToDestructiveMigration`).
+- **UI**: removed “Preparing seek…” from scrub path entirely. If video && `!seekReady`: disable slider + horizontal scrub + ±10 (playback from start still works). Separate chip: “Indexing video… N%” / “Enable seeking”. When prepare completes → enable seek.
+- **Removed**: seek-time `SeekableRemuxCache` / `swapToFileSource` / remux-on-READY / pending-seek queue. Kept wipe of playcache + `seekprep` on lock. Still **no PiP**.
 
 ## What this release adds (v0.4.10 / versionCode 27)
 
@@ -130,7 +139,7 @@ Offline encrypted personal workspace for Android. **v0.4.10** — encryption alr
 - 4-digit PIN setup / unlock / **change** (weak PINs rejected, progressive lockout on unlock)
 - VAULT1 chunked AES-256-GCM + PBKDF2-HMAC-SHA256 (210 000 iterations)
 - SAF multi-file import + **share-sheet import**; SAF export with confirmation
-- Image / Media3 decrypting playback (**audio + video**: EncryptedDataSource instant play; background remux to seekable MP4 for unseekable WEB-DL; Media3 1.11) / **secure PDF** (proxy/memfd)
+- Image / Media3 decrypting playback (**audio + video**: EncryptedDataSource Path A; one-time Path B prepare for unseekable containers → re-encrypted progressive MP4; Media3 1.11) / **secure PDF** (proxy/memfd)
 - Auto-lock on background; idle timer pauses during playback; SAF/share defer-lock
 - No `INTERNET` permission; `allowBackup=false`; screenshots allowed (no `FLAG_SECURE` until Phase 4)
 
@@ -140,7 +149,7 @@ Nested folders, bulk export, tablet two-pane, import cancel/resume, image editor
 
 ## Limitations (honest)
 
-- **Destructive DB migration on upgrade to v0.3.0**: Room schema wipe via `fallbackToDestructiveMigration` — early-app OK; re-import after upgrade if you had data on v0.2.x. **v0.3.1–v0.3.5 keep Room v3** — no schema change / no extra wipe for 0.3.0 → 0.3.5.
+- **Destructive DB migration on upgrade to v0.3.0**: Room schema wipe via `fallbackToDestructiveMigration` — early-app OK; re-import after upgrade if you had data on v0.2.x. **v0.3.1–v0.4.10 Room v3**; **v0.4.11 bumps Room to v4** (`seekReady`) — destructive migration wipes local DB on upgrade (re-import).
 - Biometric wrap is invalidated if biometrics are re-enrolled on the device; also cleared after **Change PIN** — re-enable from Settings after PIN unlock
 - Rooted / unlocked session can read vault memory and files
 - Screenshots of unlocked screens work (intentional for testing in P0–P3)

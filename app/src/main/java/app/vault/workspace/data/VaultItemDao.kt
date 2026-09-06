@@ -43,6 +43,12 @@ interface VaultItemDao {
     @Query("UPDATE vault_items SET favorite = :favorite WHERE id = :id")
     suspend fun setFavorite(id: String, favorite: Boolean)
 
+    @Query("UPDATE vault_items SET seekReady = :seekReady WHERE id = :id")
+    suspend fun setSeekReady(id: String, seekReady: Boolean)
+
+    @Query("UPDATE vault_items SET sizeBytes = :sizeBytes WHERE id = :id")
+    suspend fun setSizeBytes(id: String, sizeBytes: Long)
+
     @Query("UPDATE vault_items SET folderId = :folderId WHERE id = :id")
     suspend fun setItemFolder(id: String, folderId: String?)
 

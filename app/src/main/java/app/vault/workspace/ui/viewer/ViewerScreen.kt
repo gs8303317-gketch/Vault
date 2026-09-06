@@ -129,6 +129,10 @@ fun ViewerScreen(
                     mimeType = item.mimeType,
                     title = item.displayName,
                     itemId = item.id,
+                    seekReady = item.seekReady,
+                    runSeekPrepare = { onProgress ->
+                        repository.runVideoSeekPrepare(item.id, onProgress)
+                    },
                     onPlaybackActive = { active ->
                         videoPlaying = active
                         onPlaybackActive(active)

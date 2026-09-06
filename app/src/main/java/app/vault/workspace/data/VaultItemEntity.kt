@@ -19,6 +19,12 @@ data class VaultItemEntity(
     val favorite: Boolean = false,
     /** Nullable folder membership; null = unfiled / root. */
     val folderId: String? = null,
+    /**
+     * Progressive seek ready for ExoPlayer + EncryptedDataSource.
+     * Non-video defaults true. Video starts false until probe says already
+     * seekable or [app.vault.workspace.media.VideoSeekPrepare] finishes.
+     */
+    val seekReady: Boolean = true,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -33,7 +39,8 @@ data class VaultItemEntity(
             dekWrap.contentEquals(other.dekWrap) &&
             hasThumb == other.hasThumb &&
             favorite == other.favorite &&
-            folderId == other.folderId
+            folderId == other.folderId &&
+            seekReady == other.seekReady
     }
 
     override fun hashCode(): Int {
@@ -48,6 +55,7 @@ data class VaultItemEntity(
         result = 31 * result + hasThumb.hashCode()
         result = 31 * result + favorite.hashCode()
         result = 31 * result + (folderId?.hashCode() ?: 0)
+        result = 31 * result + seekReady.hashCode()
         return result
     }
 }

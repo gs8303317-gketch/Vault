@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.Uri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
-import androidx.media3.datasource.FileDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
@@ -20,9 +19,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Callers must create/use the player on the **main** thread (Media3 requirement).
  * Load the DEK on a background thread first; do not create ExoPlayer on IO.
  *
- * All media (audio + video) starts with [EncryptedDataSource] / streaming decrypt.
- * Unseekable WEB-DL video is remuxed in the background to a seekable MP4
- * ([SeekableRemuxCache]) and swapped in without interrupting instant play.
+ * Path A — all media plays only via [EncryptedDataSource] / streaming decrypt.
+ * No remux, no full decrypt, no plaintext left on disk, no seek-time prepare.
+ * Unseekable containers are repaired once in background by [VideoSeekPrepare]
+ * (Path B), then the rewritten ciphertext is played again via Path A.
  */
 class DecryptingPlayback(
     val player: ExoPlayer,
@@ -97,32 +97,5 @@ object PlayerFactory {
             player = player,
             extraCleanup = { KeyHierarchy.wipe(dekCopy) },
         )
-    }
-
-    /**
-     * **Main thread only.** Swap an existing player to a remuxed seekable MP4
-     * (or any real filesystem file) at [positionMs], keeping [playWhenReady].
-     */
-    fun swapToFileSource(
-        player: ExoPlayer,
-        file: File,
-        positionMs: Long,
-        playWhenReady: Boolean,
-    ) {
-        val extractorsFactory = DefaultExtractorsFactory()
-            .setConstantBitrateSeekingEnabled(true)
-        val factory = FileDataSource.Factory()
-        val mediaSource = ProgressiveMediaSource.Factory(factory, extractorsFactory)
-            .createMediaSource(
-                MediaItem.Builder()
-                    .setUri(Uri.fromFile(file))
-                    .build(),
-            )
-        val keepPlaying = playWhenReady
-        player.playWhenReady = false
-        player.setMediaSource(mediaSource)
-        player.seekTo(positionMs.coerceAtLeast(0L))
-        player.prepare()
-        player.playWhenReady = keepPlaying
     }
 }
