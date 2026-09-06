@@ -5,6 +5,16 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+val releaseStoreFile = System.getenv("VAULT_KEYSTORE_FILE")
+val releaseStorePassword = System.getenv("VAULT_KEYSTORE_PASSWORD")
+val releaseKeyAlias = System.getenv("VAULT_KEY_ALIAS")
+val releaseKeyPassword = System.getenv("VAULT_KEY_PASSWORD")
+val releaseSigningReady = !releaseStoreFile.isNullOrBlank() &&
+    !releaseStorePassword.isNullOrBlank() &&
+    !releaseKeyAlias.isNullOrBlank() &&
+    !releaseKeyPassword.isNullOrBlank() &&
+    file(releaseStoreFile!!).exists()
+
 android {
     namespace = "app.vault.workspace"
     compileSdk = 35
@@ -22,19 +32,11 @@ android {
 
     signingConfigs {
         create("release") {
-            val ksFile = System.getenv("VAULT_KEYSTORE_FILE")
-            val ksPass = System.getenv("VAULT_KEYSTORE_PASSWORD")
-            val keyAliasEnv = System.getenv("VAULT_KEY_ALIAS")
-            val keyPass = System.getenv("VAULT_KEY_PASSWORD")
-            if (ksFile.isNullOrBlank() || ksPass.isNullOrBlank() ||
-                keyAliasEnv.isNullOrBlank() || keyPass.isNullOrBlank()
-            ) {
-                // Config is registered; assembleRelease task will fail explicitly below
-            } else {
-                storeFile = file(ksFile)
-                storePassword = ksPass
-                keyAlias = keyAliasEnv
-                keyPassword = keyPass
+            if (releaseSigningReady) {
+                storeFile = file(releaseStoreFile!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
             }
         }
     }
@@ -46,15 +48,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            val ksFile = System.getenv("VAULT_KEYSTORE_FILE")
-            val ksPass = System.getenv("VAULT_KEYSTORE_PASSWORD")
-            val keyAliasEnv = System.getenv("VAULT_KEY_ALIAS")
-            val keyPass = System.getenv("VAULT_KEY_PASSWORD")
-            if (ksFile.isNullOrBlank() || ksPass.isNullOrBlank() ||
-                keyAliasEnv.isNullOrBlank() || keyPass.isNullOrBlank()
-            ) {
-                // Will fail at signing time — see afterEvaluate guard
-            } else {
+            if (releaseSigningReady) {
                 signingConfig = signingConfigs.getByName("release")
             }
         }
@@ -84,35 +78,15 @@ android {
     }
 }
 
-// Fail fast if release assemble is requested without signing env
-afterEvaluate {
-    tasks.matching { it.name == "assembleRelease" || it.name == "packageRelease" }.configureEach {
-        doFirst {
-            val ksFile = System.getenv("VAULT_KEYSTORE_FILE")
-            val ksPass = System.getenv("VAULT_KEYSTORE_PASSWORD")
-            val keyAliasEnv = System.getenv("VAULT_KEY_ALIAS")
-            val keyPass = System.getenv("VAULT_KEY_PASSWORD")
-            if (ksFile.isNullOrBlank() || ksPass.isNullOrBlank() ||
-                keyAliasEnv.isNullOrBlank() || keyPass.isNullOrBlank()
-            ) {
-                throw GradleException(
-                    "Release signing env missing. Set VAULT_KEYSTORE_FILE, " +
-                        "VAULT_KEYSTORE_PASSWORD, VAULT_KEY_ALIAS, VAULT_KEY_PASSWORD."
-                )
-            }
-            val f = file(ksFile)
-            if (!f.exists()) {
-                throw GradleException("Keystore file not found: $ksFile")
-            }
-            android.signingConfigs.getByName("release").apply {
-                storeFile = f
-                storePassword = ksPass
-                keyAlias = keyAliasEnv
-                keyPassword = keyPass
-            }
-            android.buildTypes.getByName("release").signingConfig =
-                android.signingConfigs.getByName("release")
-        }
+// Fail fast if release assemble is requested without signing env (do not mutate locked DSL)
+gradle.taskGraph.whenReady {
+    val wantsRelease = allTasks.any { it.name.contains("Release", ignoreCase = false) &&
+        (it.name.startsWith("assemble") || it.name.startsWith("package") || it.name.startsWith("bundle")) }
+    if (wantsRelease && !releaseSigningReady) {
+        throw GradleException(
+            "Release signing env missing or keystore not found. Set VAULT_KEYSTORE_FILE, " +
+                "VAULT_KEYSTORE_PASSWORD, VAULT_KEY_ALIAS, VAULT_KEY_PASSWORD."
+        )
     }
 }
 
