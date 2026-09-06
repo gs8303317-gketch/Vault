@@ -79,6 +79,10 @@ fun ViewerScreen(
     onPlayerCreated: (DecryptingPlayback) -> Unit,
     onPreviousMedia: (() -> Unit)? = null,
     onNextMedia: (() -> Unit)? = null,
+    slideshowPlaying: Boolean = false,
+    onSlideshowPlayingChange: (Boolean) -> Unit = {},
+    slideshowIntervalMs: Long = 3_000L,
+    onSlideshowIntervalMsChange: (Long) -> Unit = {},
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     var showExportConfirm by remember { mutableStateOf(false) }
@@ -120,12 +124,17 @@ fun ViewerScreen(
             when (item.category) {
                 VaultCategory.IMAGE -> ImageViewer(
                     loadBytes = { repository.decryptFully(item.id) },
+                    mimeType = item.mimeType,
                     modifier = Modifier.fillMaxSize(),
                     onSingleTap = { toggleChrome() },
                     onPrevious = onPreviousMedia,
                     onNext = onNextMedia,
                     title = item.displayName,
                     controlsVisible = chromeVisible,
+                    slideshowPlaying = slideshowPlaying,
+                    onSlideshowPlayingChange = onSlideshowPlayingChange,
+                    slideshowIntervalMs = slideshowIntervalMs,
+                    onSlideshowIntervalMsChange = onSlideshowIntervalMsChange,
                 )
                 VaultCategory.VIDEO -> MediaPlayerScreen(
                     vatFile = repository.blobFile(item.id),

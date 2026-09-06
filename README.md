@@ -1,6 +1,14 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.4.14** — Phase 1 premium Image Viewer (zoom-to-point, clamp, rotate/flip, fit modes, swipe nav, tool rail).
+Offline encrypted personal workspace for Android. **v0.4.15** — Phase 2 Image Viewer (slideshow, GIF playback, keep-screen-on).
+
+## What this release adds (v0.4.15 / versionCode 32)
+
+- **Phase 2 Image Viewer**: slideshow, GIF, keep-screen-on — still decrypt-only via `loadBytes` (no plaintext on disk); wipe GIF bytes / recycle bitmaps on dispose.
+- **Slideshow**: play/pause on image tool rail; interval cycles 2s / 3s / 5s / 10s (default 3s); advances via `onNext`; image queue wraps to first when >1 item, else stops at end; pauses on pinch/pan/double-tap zoom; chrome auto-hide still OK.
+- **GIF playback**: when `mimeType` is `image/gif`, animate with `android.graphics.Movie` (frames drawn into a reusable bitmap); static `BitmapFactory` fallback if decode fails. `ViewerScreen` passes `item.mimeType`.
+- **Keep screen on** while immersive image viewer is showing (`FLAG_KEEP_SCREEN_ON`); cleared on dispose / leave viewer.
+- **Wire**: slideshow state hoisted in `VaultNav` so play/interval survive image→image nav; image gallery queue separate from AV player queue. Phase 1 gestures + video/PDF unchanged. No Phase 3 crop/EXIF.
 
 ## What this release adds (v0.4.14 / versionCode 31)
 
@@ -9,7 +17,7 @@ Offline encrypted personal workspace for Android. **v0.4.14** — Phase 1 premiu
 - **Transform**: rotate 0/90/180/270 and flip H/V via gold-accent bottom tool rail (`graphicsLayer` rotationZ + scaleX/Y sign); Fit / Fill / Width cycle; Reset.
 - **Chrome**: tool rail + HUD `WxH` chip hide with immersive chrome (tap); haptics on rotate/flip/reset/fit like media player.
 - **Wire**: `ImageViewer` takes optional `onPrevious`/`onNext`/`title`/`controlsVisible`; `ViewerScreen` IMAGE branch passes media queue callbacks (video/audio/PDF unchanged).
-- Still **no PiP**. Out of scope: slideshow, GIF, crop/re-encrypt, filters, EXIF.
+- Still **no PiP**. Out of scope at the time: slideshow, GIF, crop/re-encrypt, filters, EXIF (slideshow/GIF landed in v0.4.15).
 
 ## What this release adds (v0.4.13 / versionCode 30)
 

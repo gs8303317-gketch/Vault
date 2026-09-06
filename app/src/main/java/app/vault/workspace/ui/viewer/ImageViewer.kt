@@ -1,7 +1,15 @@
 package app.vault.workspace.ui.viewer
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Movie
+import android.os.SystemClock
 import android.view.HapticFeedbackConstants
+import android.view.WindowManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -27,9 +35,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Flip
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Rotate90DegreesCw
 import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -42,6 +53,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,6 +74,7 @@ import app.vault.workspace.ui.theme.VaultAccent
 import app.vault.workspace.ui.theme.VaultTextMuted
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.max
@@ -74,22 +87,49 @@ enum class ImageFitMode(val label: String) {
     WIDTH("Width"),
 }
 
+/** Slideshow advance intervals (Phase 2). Default 3s. */
+enum class SlideshowInterval(val ms: Long, val label: String) {
+    S2(2_000L, "2s"),
+    S3(3_000L, "3s"),
+    S5(5_000L, "5s"),
+    S10(10_000L, "10s");
+
+    fun next(): SlideshowInterval = entries[(ordinal + 1) % entries.size]
+
+    companion object {
+        val Default: SlideshowInterval = S3
+
+        fun fromMs(ms: Long): SlideshowInterval =
+            entries.firstOrNull { it.ms == ms } ?: Default
+    }
+}
+
 /**
- * Premium Phase 1 image viewer (Aves/Simple/Fossify-style chrome):
+ * Premium image viewer (Phase 1 + Phase 2):
  * decrypt via [loadBytes], pinch zoom, double-tap toward point, clamped pan,
- * rotate/flip, fit modes, swipe prev/next at scale≈1, HUD resolution chip.
+ * rotate/flip, fit modes, swipe prev/next at scale≈1, HUD resolution chip,
+ * slideshow, GIF playback, keep-screen-on while immersive.
  */
 @Composable
 fun ImageViewer(
     loadBytes: suspend () -> ByteArray,
     modifier: Modifier = Modifier,
+    mimeType: String? = null,
     onSingleTap: (() -> Unit)? = null,
     onPrevious: (() -> Unit)? = null,
     onNext: (() -> Unit)? = null,
     title: String? = null,
     controlsVisible: Boolean = true,
+    slideshowPlaying: Boolean = false,
+    onSlideshowPlayingChange: (Boolean) -> Unit = {},
+    slideshowIntervalMs: Long = SlideshowInterval.Default.ms,
+    onSlideshowIntervalMsChange: (Long) -> Unit = {},
 ) {
-    var bitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var bitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var gifMovie by remember { mutableStateOf<Movie?>(null) }
+    var gifBytes by remember { mutableStateOf<ByteArray?>(null) }
+    var gifCanvasBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var frameEpoch by remember { mutableIntStateOf(0) }
     var intrinsicW by remember { mutableIntStateOf(0) }
     var intrinsicH by remember { mutableIntStateOf(0) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -101,10 +141,46 @@ fun ImageViewer(
     var fitMode by remember { mutableStateOf(ImageFitMode.FIT) }
     var hudVisible by remember { mutableStateOf(false) }
     val view = LocalView.current
+    val interval = SlideshowInterval.fromMs(slideshowIntervalMs)
+    val currentOnNext by rememberUpdatedState(onNext)
+    val currentSlideshowPlaying by rememberUpdatedState(slideshowPlaying)
+    val currentOnSlideshowPlayingChange by rememberUpdatedState(onSlideshowPlayingChange)
+    val currentIntervalMs by rememberUpdatedState(interval.ms)
 
-    LaunchedEffect(Unit) {
+    // Keep screen on while immersive image viewer is showing; clear on dispose.
+    DisposableEffect(Unit) {
+        val window = view.context.findActivity()?.window
+        window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
+    LaunchedEffect(mimeType) {
         try {
             val bytes = withContext(Dispatchers.IO) { loadBytes() }
+            val isGif = mimeType.equals("image/gif", ignoreCase = true)
+            if (isGif) {
+                val movie = withContext(Dispatchers.IO) {
+                    Movie.decodeByteArray(bytes, 0, bytes.size)
+                }
+                if (movie != null && movie.width() > 0 && movie.height() > 0 && movie.duration() > 0) {
+                    intrinsicW = movie.width()
+                    intrinsicH = movie.height()
+                    val canvasBmp = Bitmap.createBitmap(
+                        movie.width().coerceAtLeast(1),
+                        movie.height().coerceAtLeast(1),
+                        Bitmap.Config.ARGB_8888,
+                    )
+                    gifMovie = movie
+                    gifBytes = bytes
+                    gifCanvasBitmap = canvasBmp
+                    bitmap = canvasBmp
+                    hudVisible = true
+                    return@LaunchedEffect
+                }
+                // Static fallback if Movie decode fails / not animated
+            }
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
             intrinsicW = bounds.outWidth
@@ -115,7 +191,10 @@ fun ImageViewer(
                 sample *= 2
             }
             val decode = BitmapFactory.Options().apply { inSampleSize = sample }
-            bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, decode)
+            val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, decode)
+            // Wipe plaintext bytes after static decode (GIF path keeps bytes for Movie).
+            bytes.fill(0)
+            bitmap = decoded
             if (bitmap == null) {
                 error = "Cannot decode image"
             } else {
@@ -123,6 +202,42 @@ fun ImageViewer(
             }
         } catch (e: Exception) {
             error = e.message ?: "Failed to load image"
+        }
+    }
+
+    // Animate GIF frames on the main thread; Movie.setTime + draw into reusable bitmap.
+    LaunchedEffect(gifMovie, gifCanvasBitmap) {
+        val movie = gifMovie ?: return@LaunchedEffect
+        val canvasBmp = gifCanvasBitmap ?: return@LaunchedEffect
+        val dur = movie.duration().coerceAtLeast(1)
+        val start = SystemClock.uptimeMillis()
+        val canvas = Canvas(canvasBmp)
+        while (isActive) {
+            val t = ((SystemClock.uptimeMillis() - start) % dur).toInt()
+            movie.setTime(t)
+            canvasBmp.eraseColor(android.graphics.Color.TRANSPARENT)
+            movie.draw(canvas, 0f, 0f)
+            frameEpoch++
+            delay(16L)
+        }
+    }
+
+    // Slideshow: advance via onNext when available; stop at end if null.
+    // Keyed only on playing/interval — onNext lambdas are unstable across recomposition.
+    LaunchedEffect(slideshowPlaying, slideshowIntervalMs) {
+        if (!slideshowPlaying) return@LaunchedEffect
+        while (isActive) {
+            delay(currentIntervalMs)
+            if (!currentSlideshowPlaying) break
+            val next = currentOnNext
+            if (next != null) {
+                next.invoke()
+                // New ImageViewer instance continues the session; avoid double-advance.
+                return@LaunchedEffect
+            } else {
+                currentOnSlideshowPlayingChange(false)
+                break
+            }
         }
     }
 
@@ -141,13 +256,29 @@ fun ImageViewer(
 
     DisposableEffect(Unit) {
         onDispose {
-            bitmap?.recycle()
+            val staticBmp = bitmap
+            val canvasBmp = gifCanvasBitmap
+            // Avoid double-recycle when static display shares the GIF canvas bitmap.
+            if (staticBmp != null && staticBmp !== canvasBmp && !staticBmp.isRecycled) {
+                staticBmp.recycle()
+            }
+            if (canvasBmp != null && !canvasBmp.isRecycled) {
+                canvasBmp.recycle()
+            }
             bitmap = null
+            gifCanvasBitmap = null
+            gifMovie = null
+            gifBytes?.fill(0)
+            gifBytes = null
         }
     }
 
     fun haptic() {
         view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+    }
+
+    fun pauseSlideshow() {
+        if (currentSlideshowPlaying) currentOnSlideshowPlayingChange(false)
     }
 
     fun resetTransform(keepFit: Boolean = true) {
@@ -190,8 +321,10 @@ fun ImageViewer(
                     fun clamp(raw: Offset, s: Float): Offset =
                         clampImageOffset(raw, s, dispW, dispH, containerW, containerH)
 
+                    // Re-wrap each GIF frame so Compose invalidates the mutable bitmap.
+                    val imageBitmap = remember(frameEpoch, bmp) { bmp.asImageBitmap() }
                     Image(
-                        bitmap = bmp.asImageBitmap(),
+                        bitmap = imageBitmap,
                         contentDescription = title ?: "Image",
                         contentScale = ContentScale.FillBounds,
                         modifier = Modifier
@@ -214,6 +347,7 @@ fun ImageViewer(
                                 dispH,
                                 containerW,
                                 containerH,
+                                slideshowPlaying,
                             ) {
                                 val touchSlop = viewConfiguration.touchSlop
                                 val doubleTapTimeout = viewConfiguration.doubleTapTimeoutMillis
@@ -267,6 +401,7 @@ fun ImageViewer(
                                                 val mostlyZoom = zoomMotion > panMotion
                                                 if (multi || mostlyZoom || canPanContent) {
                                                     lockedToTransform = true
+                                                    pauseSlideshow()
                                                 } else {
                                                     swipeCandidate = true
                                                 }
@@ -327,7 +462,8 @@ fun ImageViewer(
                                                 if (now - lastTapTime <= doubleTapTimeout &&
                                                     (tapPos - lastTapPos).getDistance() < touchSlop * 4
                                                 ) {
-                                                    // Double-tap zoom toward tap point
+                                                    // Double-tap zoom toward tap point — pause slideshow
+                                                    pauseSlideshow()
                                                     if (scale > 1.2f) {
                                                         scale = 1f
                                                         offset = Offset.Zero
@@ -386,7 +522,7 @@ fun ImageViewer(
             )
         }
 
-        // Premium bottom tool rail
+        // Premium bottom tool rail (Phase 1 transforms + Phase 2 slideshow)
         AnimatedVisibility(
             visible = controlsVisible && bitmap != null,
             enter = fadeIn(),
@@ -484,9 +620,56 @@ fun ImageViewer(
                         }
                     }
                 }
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = {
+                        onSlideshowPlayingChange(!slideshowPlaying)
+                        haptic()
+                    }) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                if (slideshowPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (slideshowPlaying) "Pause slideshow" else "Play slideshow",
+                                tint = if (slideshowPlaying) VaultAccent else VaultTextMuted,
+                                modifier = Modifier.size(22.dp),
+                            )
+                            Text(
+                                if (slideshowPlaying) "Pause" else "Slide",
+                                color = Color.White,
+                                fontSize = 10.sp,
+                            )
+                        }
+                    }
+                    IconButton(onClick = {
+                        val next = interval.next()
+                        onSlideshowIntervalMsChange(next.ms)
+                        haptic()
+                    }) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                Icons.Default.Timer,
+                                contentDescription = "Slideshow interval",
+                                tint = VaultAccent,
+                                modifier = Modifier.size(22.dp),
+                            )
+                            Text(interval.label, color = Color.White, fontSize = 10.sp)
+                        }
+                    }
+                }
             }
         }
     }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
 
 /** Display size of the bitmap inside the container for the given fit mode + rotation. */

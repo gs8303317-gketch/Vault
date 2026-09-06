@@ -111,6 +111,9 @@ fun VaultNav(
     var changePinError by remember { mutableStateOf<String?>(null) }
     var changePinBusy by remember { mutableStateOf(false) }
     var changePinSuccessEpoch by remember { mutableStateOf(0) }
+    // Image slideshow hoisted here so play/interval survive image→image navigation.
+    var imageSlideshowPlaying by remember { mutableStateOf(false) }
+    var imageSlideshowIntervalMs by remember { mutableLongStateOf(3_000L) }
     val biometricHardware = remember {
         BiometricVault.isBiometricAvailable(context)
     }
@@ -148,6 +151,7 @@ fun VaultNav(
             activePlayers.forEach { it.release() }
             activePlayers = emptyList()
             ThumbCache.clear()
+            imageSlideshowPlaying = false
             autoLock.setPlaybackActive(false)
             autoLock.setDeferBackgroundLock(false)
             if (session.isSetupComplete) {
@@ -737,16 +741,36 @@ fun VaultNav(
             }
             val current = fromLibrary ?: fetched
             if (current != null) {
-                val mediaQueue = items.filter {
-                    it.category == VaultCategory.VIDEO || it.category == VaultCategory.AUDIO
+                // Image queue for gallery/slideshow; AV queue for player prev/next.
+                val mediaQueue = when (current.category) {
+                    VaultCategory.IMAGE -> items.filter { it.category == VaultCategory.IMAGE }
+                    VaultCategory.VIDEO, VaultCategory.AUDIO -> items.filter {
+                        it.category == VaultCategory.VIDEO || it.category == VaultCategory.AUDIO
+                    }
+                    else -> emptyList()
                 }
                 val mediaIndex = mediaQueue.indexOfFirst { it.id == current.id }
-                val prevMedia = mediaQueue.getOrNull(mediaIndex - 1)
-                val nextMedia = mediaQueue.getOrNull(mediaIndex + 1)
+                // Slideshow/gallery wrap only for images; AV player stays linear.
+                val wrapImages = current.category == VaultCategory.IMAGE && mediaQueue.size > 1
+                val prevMedia = when {
+                    mediaIndex < 0 || mediaQueue.isEmpty() -> null
+                    mediaIndex > 0 -> mediaQueue[mediaIndex - 1]
+                    wrapImages -> mediaQueue.last()
+                    else -> null
+                }
+                val nextMedia = when {
+                    mediaIndex < 0 || mediaQueue.isEmpty() -> null
+                    mediaIndex < mediaQueue.lastIndex -> mediaQueue[mediaIndex + 1]
+                    wrapImages -> mediaQueue.first()
+                    else -> null
+                }
                 ViewerScreen(
                     item = current,
                     repository = repository,
-                    onBack = { nav.popBackStack() },
+                    onBack = {
+                        imageSlideshowPlaying = false
+                        nav.popBackStack()
+                    },
                     onRequestExport = { vaultItem ->
                         pendingExport = vaultItem
                         autoLock.setDeferBackgroundLock(true)
@@ -759,6 +783,7 @@ fun VaultNav(
                     },
                     onMoveToTrash = { vaultItem ->
                         scope.launch {
+                            imageSlideshowPlaying = false
                             repository.moveToTrash(vaultItem.id)
                             statusMessage = "Moved to trash"
                             nav.popBackStack()
@@ -785,6 +810,10 @@ fun VaultNav(
                             }
                         }
                     },
+                    slideshowPlaying = imageSlideshowPlaying,
+                    onSlideshowPlayingChange = { imageSlideshowPlaying = it },
+                    slideshowIntervalMs = imageSlideshowIntervalMs,
+                    onSlideshowIntervalMsChange = { imageSlideshowIntervalMs = it },
                 )
             }
         }
