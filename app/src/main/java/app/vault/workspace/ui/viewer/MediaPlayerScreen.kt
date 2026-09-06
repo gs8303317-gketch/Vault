@@ -1,6 +1,10 @@
 package app.vault.workspace.ui.viewer
 
 import android.app.Activity
+import android.app.PictureInPictureParams
+import android.content.pm.PackageManager
+import android.os.Build
+import android.util.Rational
 import android.content.Context
 import android.content.ContextWrapper
 import android.media.AudioManager
@@ -42,6 +46,9 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.ClosedCaption
+import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.BrightnessHigh
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Lock
@@ -82,6 +89,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
@@ -89,6 +97,9 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import app.vault.workspace.media.PlaybackPositionStore
+import app.vault.workspace.media.SelectableTrack
+import app.vault.workspace.media.applyTrackOverride
+import app.vault.workspace.media.collectSelectableTracks
 import app.vault.workspace.media.PlayerFactory
 import app.vault.workspace.ui.theme.VaultAccent
 import app.vault.workspace.ui.theme.VaultBg
@@ -292,6 +303,10 @@ private fun PremiumPlayerOverlay(
     var sleepRemainingMs by remember { mutableLongStateOf(0L) }
     var sleepUntilEpochMs by remember { mutableLongStateOf(0L) }
     var sleepMenuOpen by remember { mutableStateOf(false) }
+    var audioMenuOpen by remember { mutableStateOf(false) }
+    var subtitleMenuOpen by remember { mutableStateOf(false) }
+    var audioTracks by remember { mutableStateOf<List<SelectableTrack>>(emptyList()) }
+    var textTracks by remember { mutableStateOf<List<SelectableTrack>>(emptyList()) }
     var didResume by remember { mutableStateOf(false) }
 
     var brightness by remember {
@@ -353,8 +368,13 @@ private fun PremiumPlayerOverlay(
                 }
             }
 
-            // Persist resume position ~every 2s
+            // Persist resume position ~every 2s; refresh tracks periodically
             saveTick++
+            if (saveTick % 5 == 0) {
+                val tracks = player.currentTracks
+                audioTracks = collectSelectableTracks(tracks, C.TRACK_TYPE_AUDIO)
+                textTracks = collectSelectableTracks(tracks, C.TRACK_TYPE_TEXT)
+            }
             if (saveTick % 10 == 0 && itemId != null) {
                 positionStore.savePositionMs(itemId, player.currentPosition, durationMs)
             }
@@ -425,10 +445,10 @@ private fun PremiumPlayerOverlay(
         }
     }
 
-    LaunchedEffect(controlsVisible, isPlaying, gesturesLocked, speedMenuOpen, fitMenuOpen, sleepMenuOpen) {
+    LaunchedEffect(controlsVisible, isPlaying, gesturesLocked, speedMenuOpen, fitMenuOpen, sleepMenuOpen, audioMenuOpen, subtitleMenuOpen) {
         // Top title/chrome follows player controls only — stay hidden while locked.
         onControlsVisibilityChanged(controlsVisible && !gesturesLocked)
-        if (controlsVisible && isPlaying && !gesturesLocked && !speedMenuOpen && !fitMenuOpen && !sleepMenuOpen) {
+        if (controlsVisible && isPlaying && !gesturesLocked && !speedMenuOpen && !fitMenuOpen && !sleepMenuOpen && !audioMenuOpen && !subtitleMenuOpen) {
             delay(CONTROLS_HIDE_MS)
             controlsVisible = false
         }
@@ -514,6 +534,16 @@ private fun PremiumPlayerOverlay(
         brightnessOverlay = (v * 100).toInt()
     }
 
+    fun enterPip() {
+        if (isAudio) return
+        val act = activity ?: return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        if (!act.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) return
+        val ratio = Rational(16, 9)
+        val params = PictureInPictureParams.Builder().setAspectRatio(ratio).build()
+        act.enterPictureInPictureMode(params)
+    }
+
     fun toggleLock() {
         gesturesLocked = !gesturesLocked
         speedMenuOpen = false
@@ -542,6 +572,7 @@ private fun PremiumPlayerOverlay(
                         useController = false
                         resizeMode = fitMode.resizeMode
                         keepScreenOn = true
+                        subtitleView?.visibility = android.view.View.VISIBLE
                         this.player = player
                     }
                 },
@@ -920,49 +951,35 @@ private fun PremiumPlayerOverlay(
                     }
                 }
 
-                Spacer(Modifier.height(if (isAudio) 8.dp else 2.dp))
-                // Volume via side gesture only — no bottom slider (VLC-style chrome).
+                Spacer(Modifier.height(if (isAudio) 10.dp else 6.dp))
+
+                // Premium tool rail — evenly spaced, primary actions first
                 Row(
                     Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
+                    horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Box {
-                        TextButton(
-                            onClick = {
-                                speedMenuOpen = true
-                                fitMenuOpen = false
-                                showControls()
-                            },
-                        ) {
-                            Icon(
-                                Icons.Default.Speed,
-                                contentDescription = null,
-                                tint = VaultAccent,
-                                modifier = Modifier.size(18.dp),
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                formatPlaybackSpeed(baseSpeed),
-                                color = Color.White,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                            )
+                        IconButton(onClick = {
+                            speedMenuOpen = true
+                            fitMenuOpen = false
+                            sleepMenuOpen = false
+                            audioMenuOpen = false
+                            subtitleMenuOpen = false
+                            showControls()
+                        }) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Default.Speed, null, tint = VaultAccent, modifier = Modifier.size(20.dp))
+                                Text(formatPlaybackSpeed(baseSpeed), color = Color.White, fontSize = 10.sp)
+                            }
                         }
-                        DropdownMenu(
-                            expanded = speedMenuOpen,
-                            onDismissRequest = { speedMenuOpen = false },
-                        ) {
+                        DropdownMenu(expanded = speedMenuOpen, onDismissRequest = { speedMenuOpen = false }) {
                             PLAYBACK_SPEEDS.forEach { speed ->
                                 DropdownMenuItem(
                                     text = {
                                         Text(
                                             formatPlaybackSpeed(speed),
-                                            fontWeight = if (speed == baseSpeed) {
-                                                FontWeight.Bold
-                                            } else {
-                                                FontWeight.Normal
-                                            },
+                                            fontWeight = if (speed == baseSpeed) FontWeight.Bold else FontWeight.Normal,
                                             color = if (speed == baseSpeed) VaultAccent else VaultText,
                                         )
                                     },
@@ -979,42 +996,30 @@ private fun PremiumPlayerOverlay(
 
                     if (!isAudio) {
                         Box {
-                            IconButton(
-                                onClick = {
-                                    fitMenuOpen = true
-                                    speedMenuOpen = false
-                                    showControls()
-                                },
-                            ) {
-                                Icon(
-                                    Icons.Default.AspectRatio,
-                                    contentDescription = "Fit mode",
-                                    tint = VaultTextMuted,
-                                )
+                            IconButton(onClick = {
+                                fitMenuOpen = true
+                                speedMenuOpen = false
+                                sleepMenuOpen = false
+                                audioMenuOpen = false
+                                subtitleMenuOpen = false
+                                showControls()
+                            }) {
+                                Icon(Icons.Default.AspectRatio, "Fit", tint = VaultTextMuted)
                             }
-                            DropdownMenu(
-                                expanded = fitMenuOpen,
-                                onDismissRequest = { fitMenuOpen = false },
-                            ) {
+                            DropdownMenu(expanded = fitMenuOpen, onDismissRequest = { fitMenuOpen = false }) {
                                 VideoFitMode.entries.forEach { mode ->
                                     DropdownMenuItem(
                                         text = {
                                             Text(
                                                 mode.label,
-                                                fontWeight = if (fitMode == mode) {
-                                                    FontWeight.Bold
-                                                } else {
-                                                    FontWeight.Normal
-                                                },
+                                                fontWeight = if (fitMode == mode) FontWeight.Bold else FontWeight.Normal,
                                                 color = if (fitMode == mode) VaultAccent else VaultText,
                                             )
                                         },
                                         onClick = {
                                             fitMode = mode
                                             fitMenuOpen = false
-                                            view.performHapticFeedback(
-                                                HapticFeedbackConstants.CONTEXT_CLICK,
-                                            )
+                                            view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
                                             showControls()
                                         },
                                     )
@@ -1023,40 +1028,34 @@ private fun PremiumPlayerOverlay(
                         }
                     }
 
-                    // Loop: Off → One → A–B
-                    IconButton(
-                        onClick = {
-                            loopMode = when (loopMode) {
-                                LoopMode.OFF -> LoopMode.ONE
-                                LoopMode.ONE -> {
-                                    if (markerAMs != null && markerBMs != null) LoopMode.AB
-                                    else LoopMode.OFF
-                                }
-                                LoopMode.AB -> LoopMode.OFF
-                            }
-                            view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
-                            showControls()
-                        },
-                    ) {
+                    IconButton(onClick = {
+                        loopMode = when (loopMode) {
+                            LoopMode.OFF -> LoopMode.ONE
+                            LoopMode.ONE -> if (markerAMs != null && markerBMs != null) LoopMode.AB else LoopMode.OFF
+                            LoopMode.AB -> LoopMode.OFF
+                        }
+                        view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                        showControls()
+                    }) {
                         Icon(
-                            when (loopMode) {
-                                LoopMode.ONE -> Icons.Default.RepeatOne
-                                else -> Icons.Default.Repeat
-                            },
-                            contentDescription = "Loop mode",
-                            tint = when (loopMode) {
-                                LoopMode.OFF -> VaultTextMuted
-                                else -> VaultAccent
-                            },
+                            if (loopMode == LoopMode.ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
+                            "Loop",
+                            tint = if (loopMode == LoopMode.OFF) VaultTextMuted else VaultAccent,
                         )
                     }
 
-                    // Set A / B markers for A–B loop
+                    // A marker — tap to set, tap again to clear
                     TextButton(
                         onClick = {
-                            markerAMs = player.currentPosition.coerceAtLeast(0L)
-                            val b = markerBMs
-                            if (b != null && b <= markerAMs!!) markerBMs = null
+                            if (markerAMs != null) {
+                                markerAMs = null
+                                markerBMs = null
+                                if (loopMode == LoopMode.AB) loopMode = LoopMode.OFF
+                            } else {
+                                markerAMs = player.currentPosition.coerceAtLeast(0L)
+                                val b = markerBMs
+                                if (b != null && b <= markerAMs!!) markerBMs = null
+                            }
                             view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
                             showControls()
                         },
@@ -1070,16 +1069,20 @@ private fun PremiumPlayerOverlay(
                     }
                     TextButton(
                         onClick = {
-                            val pos = player.currentPosition.coerceAtLeast(0L)
-                            val a = markerAMs
-                            if (a != null && pos > a) {
-                                markerBMs = pos
-                                loopMode = LoopMode.AB
-                            } else if (a == null) {
-                                // Set A first at a slightly earlier point if missing
-                                markerAMs = (pos - 1_000L).coerceAtLeast(0L)
-                                markerBMs = pos
-                                loopMode = LoopMode.AB
+                            if (markerBMs != null) {
+                                markerBMs = null
+                                if (loopMode == LoopMode.AB) loopMode = LoopMode.OFF
+                            } else {
+                                val pos = player.currentPosition.coerceAtLeast(0L)
+                                val a = markerAMs
+                                if (a != null && pos > a) {
+                                    markerBMs = pos
+                                    loopMode = LoopMode.AB
+                                } else if (a == null) {
+                                    markerAMs = (pos - 1_000L).coerceAtLeast(0L)
+                                    markerBMs = pos
+                                    loopMode = LoopMode.AB
+                                }
                             }
                             view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
                             showControls()
@@ -1096,36 +1099,111 @@ private fun PremiumPlayerOverlay(
                     Box {
                         IconButton(
                             onClick = {
-                                sleepMenuOpen = true
+                                audioMenuOpen = true
+                                subtitleMenuOpen = false
                                 speedMenuOpen = false
                                 fitMenuOpen = false
+                                sleepMenuOpen = false
+                                showControls()
+                            },
+                            enabled = audioTracks.isNotEmpty(),
+                        ) {
+                            Icon(
+                                Icons.Default.Headphones,
+                                "Audio track",
+                                tint = if (audioTracks.isNotEmpty()) VaultTextMuted else VaultTextMuted.copy(alpha = 0.35f),
+                            )
+                        }
+                        DropdownMenu(expanded = audioMenuOpen, onDismissRequest = { audioMenuOpen = false }) {
+                            if (audioTracks.isEmpty()) {
+                                DropdownMenuItem(text = { Text("No audio tracks", color = VaultTextMuted) }, onClick = { audioMenuOpen = false })
+                            } else {
+                                audioTracks.forEach { track ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                track.label,
+                                                fontWeight = if (track.selected) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (track.selected) VaultAccent else VaultText,
+                                            )
+                                        },
+                                        onClick = {
+                                            applyTrackOverride(player, player.currentTracks, C.TRACK_TYPE_AUDIO, track)
+                                            audioMenuOpen = false
+                                            showControls()
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Box {
+                        IconButton(
+                            onClick = {
+                                subtitleMenuOpen = true
+                                audioMenuOpen = false
+                                speedMenuOpen = false
+                                fitMenuOpen = false
+                                sleepMenuOpen = false
                                 showControls()
                             },
                         ) {
                             Icon(
-                                Icons.Default.Timer,
-                                contentDescription = "Sleep timer",
-                                tint = if (sleepRemainingMs > 0L) VaultAccent else VaultTextMuted,
+                                Icons.Default.ClosedCaption,
+                                "Subtitles",
+                                tint = if (textTracks.any { it.selected }) VaultAccent else VaultTextMuted,
                             )
                         }
-                        DropdownMenu(
-                            expanded = sleepMenuOpen,
-                            onDismissRequest = { sleepMenuOpen = false },
-                        ) {
-                            SLEEP_TIMER_OPTIONS_MIN.forEach { mins ->
+                        DropdownMenu(expanded = subtitleMenuOpen, onDismissRequest = { subtitleMenuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Off", color = VaultText) },
+                                onClick = {
+                                    applyTrackOverride(player, player.currentTracks, C.TRACK_TYPE_TEXT, null)
+                                    subtitleMenuOpen = false
+                                    showControls()
+                                },
+                            )
+                            textTracks.forEach { track ->
                                 DropdownMenuItem(
                                     text = {
                                         Text(
-                                            if (mins == 0) "Off" else "$mins min",
-                                            color = VaultText,
+                                            track.label,
+                                            fontWeight = if (track.selected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (track.selected) VaultAccent else VaultText,
                                         )
                                     },
                                     onClick = {
-                                        sleepUntilEpochMs = if (mins == 0) {
-                                            0L
-                                        } else {
-                                            System.currentTimeMillis() + mins * 60_000L
-                                        }
+                                        applyTrackOverride(player, player.currentTracks, C.TRACK_TYPE_TEXT, track)
+                                        subtitleMenuOpen = false
+                                        showControls()
+                                    },
+                                )
+                            }
+                        }
+                    }
+
+                    Box {
+                        IconButton(onClick = {
+                            sleepMenuOpen = true
+                            speedMenuOpen = false
+                            fitMenuOpen = false
+                            audioMenuOpen = false
+                            subtitleMenuOpen = false
+                            showControls()
+                        }) {
+                            Icon(
+                                Icons.Default.Timer,
+                                "Sleep",
+                                tint = if (sleepRemainingMs > 0L) VaultAccent else VaultTextMuted,
+                            )
+                        }
+                        DropdownMenu(expanded = sleepMenuOpen, onDismissRequest = { sleepMenuOpen = false }) {
+                            SLEEP_TIMER_OPTIONS_MIN.forEach { mins ->
+                                DropdownMenuItem(
+                                    text = { Text(if (mins == 0) "Off" else "$mins min", color = VaultText) },
+                                    onClick = {
+                                        sleepUntilEpochMs = if (mins == 0) 0L else System.currentTimeMillis() + mins * 60_000L
                                         sleepMenuOpen = false
                                         showControls()
                                     },
@@ -1134,12 +1212,17 @@ private fun PremiumPlayerOverlay(
                         }
                     }
 
+                    if (!isAudio) {
+                        IconButton(onClick = {
+                            enterPip()
+                            showControls()
+                        }) {
+                            Icon(Icons.Default.PictureInPictureAlt, "PiP", tint = VaultTextMuted)
+                        }
+                    }
+
                     IconButton(onClick = { toggleLock() }) {
-                        Icon(
-                            Icons.Default.LockOpen,
-                            contentDescription = "Lock gestures",
-                            tint = VaultTextMuted,
-                        )
+                        Icon(Icons.Default.LockOpen, "Lock", tint = VaultTextMuted)
                     }
                 }
 

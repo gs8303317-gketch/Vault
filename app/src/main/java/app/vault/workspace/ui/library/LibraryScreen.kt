@@ -27,6 +27,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items as lazyListItems
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -47,6 +49,9 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.ViewAgenda
+import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.VideoFile
@@ -95,6 +100,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.vault.workspace.data.VaultCategory
 import app.vault.workspace.data.VaultItem
+import app.vault.workspace.data.formatHumanSize
+import app.vault.workspace.data.formatReadableDate
 import app.vault.workspace.ui.theme.VaultAccent
 import app.vault.workspace.ui.theme.VaultBg
 import app.vault.workspace.ui.theme.VaultDanger
@@ -108,6 +115,12 @@ enum class LibrarySort(val label: String) {
     OLDEST("Oldest first"),
     NAME_AZ("Name A–Z"),
     NAME_ZA("Name Z–A"),
+}
+
+enum class LibraryViewMode(val label: String) {
+    GRID("Grid"),
+    COMFORTABLE("Comfortable"),
+    LIST("List"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -137,6 +150,8 @@ fun LibraryScreen(
     var selectedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var sort by remember { mutableStateOf(LibrarySort.NEWEST) }
     var sortMenuOpen by remember { mutableStateOf(false) }
+    var viewMode by remember { mutableStateOf(LibraryViewMode.GRID) }
+    var viewMenuOpen by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
     LaunchedEffect(statusMessage) {
@@ -236,6 +251,38 @@ fun LibraryScreen(
                         }
                     },
                     actions = {
+                        Box {
+                            IconButton(onClick = { viewMenuOpen = true }) {
+                                Icon(
+                                    when (viewMode) {
+                                        LibraryViewMode.GRID -> Icons.Default.GridView
+                                        LibraryViewMode.COMFORTABLE -> Icons.Default.ViewAgenda
+                                        LibraryViewMode.LIST -> Icons.Default.ViewList
+                                    },
+                                    contentDescription = "View mode",
+                                    tint = VaultAccent,
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = viewMenuOpen,
+                                onDismissRequest = { viewMenuOpen = false },
+                            ) {
+                                LibraryViewMode.entries.forEach { option ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                option.label,
+                                                color = if (viewMode == option) VaultAccent else VaultText,
+                                            )
+                                        },
+                                        onClick = {
+                                            viewMode = option
+                                            viewMenuOpen = false
+                                        },
+                                    )
+                                }
+                            }
+                        }
                         Box {
                             IconButton(onClick = { sortMenuOpen = true }) {
                                 Icon(
@@ -452,20 +499,21 @@ fun LibraryScreen(
                         }
                     }
                     else -> {
-                        LazyVerticalGrid(
-                            columns = GridCells.Adaptive(minSize = 112.dp),
-                            contentPadding = PaddingValues(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxSize(),
-                        ) {
-                            items(filtered, key = { it.id }) { item ->
-                                LibraryCard(
-                                    item = item,
-                                    selected = item.id in selectedIds,
-                                    selectionMode = selectionMode,
-                                    isNew = item.id == newestId && sort == LibrarySort.NEWEST,
-                                    onLoadThumb = onLoadThumb,
+                        when (viewMode) {
+                            LibraryViewMode.LIST -> {
+                                LazyColumn(
+                                    contentPadding = PaddingValues(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxSize(),
+                                ) {
+                                    lazyListItems(filtered, key = { it.id }) { item ->
+                                        LibraryListRow(
+                                            item = item,
+                                            selected = item.id in selectedIds,
+                                            selectionMode = selectionMode,
+                                            isNew = item.id == newestId && sort == LibrarySort.NEWEST,
+                                            onLoadThumb = onLoadThumb,
+
                                     onClick = {
                                         if (selectionMode) {
                                             selectedIds = if (item.id in selectedIds) {
@@ -487,7 +535,52 @@ fun LibraryScreen(
                                         }
                                     },
                                     onToggleFavorite = { onToggleFavorite(item) },
-                                )
+                                        )
+                                    }
+                                }
+                            }
+                            else -> {
+                                val minSize =
+                                    if (viewMode == LibraryViewMode.COMFORTABLE) 156.dp else 112.dp
+                                LazyVerticalGrid(
+                                    columns = GridCells.Adaptive(minSize = minSize),
+                                    contentPadding = PaddingValues(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxSize(),
+                                ) {
+                                    items(filtered, key = { it.id }) { item ->
+                                        LibraryCard(
+                                            item = item,
+                                            selected = item.id in selectedIds,
+                                            selectionMode = selectionMode,
+                                            isNew = item.id == newestId && sort == LibrarySort.NEWEST,
+                                            onLoadThumb = onLoadThumb,
+
+                                    onClick = {
+                                        if (selectionMode) {
+                                            selectedIds = if (item.id in selectedIds) {
+                                                selectedIds - item.id
+                                            } else {
+                                                selectedIds + item.id
+                                            }
+                                            if (selectedIds.isEmpty()) {
+                                                selectionMode = false
+                                            }
+                                        } else {
+                                            onOpenItem(item)
+                                        }
+                                    },
+                                    onLongClick = {
+                                        if (!selectionMode) {
+                                            selectionMode = true
+                                            selectedIds = setOf(item.id)
+                                        }
+                                    },
+                                    onToggleFavorite = { onToggleFavorite(item) },
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -672,6 +765,109 @@ private fun LibraryCard(
                     .fillMaxWidth()
                     .padding(10.dp),
             )
+        }
+    }
+}
+
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun LibraryListRow(
+    item: VaultItem,
+    selected: Boolean,
+    selectionMode: Boolean,
+    isNew: Boolean,
+    onLoadThumb: suspend (String) -> Bitmap?,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    onToggleFavorite: () -> Unit,
+) {
+    val thumb by produceState<Bitmap?>(
+        initialValue = if (item.hasThumb) ThumbCache.peek(item.id) else null,
+        item.id,
+        item.hasThumb,
+    ) {
+        value = if (item.hasThumb) {
+            runCatching { ThumbCache.get(item.id) { onLoadThumb(item.id) } }.getOrNull()
+        } else null
+    }
+    val interactionSource = remember { MutableInteractionSource() }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(VaultSurface)
+            .then(if (selected) Modifier.border(2.dp, VaultAccent, RoundedCornerShape(12.dp)) else Modifier)
+            .combinedClickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+                onLongClick = onLongClick,
+            )
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(56.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(VaultBg),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (thumb != null) {
+                Image(
+                    bitmap = thumb!!.asImageBitmap(),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Icon(categoryIcon(item.category), null, tint = VaultAccent)
+            }
+        }
+        Spacer(Modifier.size(12.dp))
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    item.displayName,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = VaultText,
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (isNew) {
+                    Spacer(Modifier.size(6.dp))
+                    Text(
+                        "NEW",
+                        color = VaultOnAccent,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier
+                            .background(VaultAccent, RoundedCornerShape(4.dp))
+                            .padding(horizontal = 5.dp, vertical = 1.dp),
+                    )
+                }
+            }
+            Text(
+                "${formatHumanSize(item.sizeBytes)} · ${formatReadableDate(item.createdAt)}",
+                color = VaultTextMuted,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        if (selectionMode) {
+            Icon(
+                if (selected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                null,
+                tint = if (selected) VaultAccent else VaultTextMuted,
+            )
+        } else {
+            IconButton(onClick = onToggleFavorite) {
+                Icon(
+                    if (item.favorite) Icons.Default.Star else Icons.Default.StarBorder,
+                    null,
+                    tint = if (item.favorite) VaultAccent else VaultTextMuted,
+                )
+            }
         }
     }
 }

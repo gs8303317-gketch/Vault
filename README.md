@@ -1,6 +1,12 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.3.9** — Phase 2 player: A–B/loop, resume, sleep timer, next/prev.
+Offline encrypted personal workspace for Android. **v0.4.0** — Phase 3 tracks/PiP, premium player rail, library view modes, A/B deselect fix.
+
+## What this release adds (v0.4.0 / versionCode 17)
+
+- **Phase 3 player**: embedded audio-track + subtitle menus, Picture-in-Picture, premium evenly-spaced tool rail.
+- **A/B markers**: tap again to deselect/clear; clearing B (or A) exits A–B loop.
+- **Library view modes**: Grid / Comfortable / List (alongside existing sort).
 
 ## What this release adds (v0.3.9 / versionCode 16)
 
