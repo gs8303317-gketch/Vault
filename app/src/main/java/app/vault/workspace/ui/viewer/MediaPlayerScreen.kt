@@ -135,6 +135,7 @@ fun MediaPlayerScreen(
     modifier: Modifier = Modifier,
     title: String? = null,
     onControlsVisibilityChanged: (Boolean) -> Unit = {},
+    onGesturesLockedChanged: (Boolean) -> Unit = {},
 ) {
     val isAudio = mimeType.startsWith("audio/", ignoreCase = true)
     val context = LocalContext.current
@@ -185,6 +186,7 @@ fun MediaPlayerScreen(
                     isAudio = isAudio,
                     title = title,
                     onControlsVisibilityChanged = onControlsVisibilityChanged,
+                    onGesturesLockedChanged = onGesturesLockedChanged,
                 )
             }
         }
@@ -197,6 +199,7 @@ private fun PremiumPlayerOverlay(
     isAudio: Boolean,
     title: String?,
     onControlsVisibilityChanged: (Boolean) -> Unit,
+    onGesturesLockedChanged: (Boolean) -> Unit,
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -293,11 +296,16 @@ private fun PremiumPlayerOverlay(
     }
 
     LaunchedEffect(controlsVisible, isPlaying, gesturesLocked, speedMenuOpen, fitMenuOpen) {
-        onControlsVisibilityChanged(controlsVisible || gesturesLocked)
+        // Top title/chrome follows player controls only — stay hidden while locked.
+        onControlsVisibilityChanged(controlsVisible && !gesturesLocked)
         if (controlsVisible && isPlaying && !gesturesLocked && !speedMenuOpen && !fitMenuOpen) {
             delay(CONTROLS_HIDE_MS)
             controlsVisible = false
         }
+    }
+
+    LaunchedEffect(gesturesLocked) {
+        onGesturesLockedChanged(gesturesLocked)
     }
 
     LaunchedEffect(volumeOverlay) {
@@ -741,41 +749,12 @@ private fun PremiumPlayerOverlay(
                 }
 
                 Spacer(Modifier.height(if (isAudio) 8.dp else 2.dp))
+                // Volume via side gesture only — no bottom slider (VLC-style chrome).
                 Row(
                     Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    IconButton(
-                        onClick = {
-                            if (volumeFraction > 0.01f) {
-                                applyVolumeFraction(0f)
-                            } else {
-                                applyVolumeFraction(0.5f)
-                            }
-                            showControls()
-                        },
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.VolumeUp,
-                            contentDescription = "Volume",
-                            tint = VaultTextMuted,
-                            modifier = Modifier.size(22.dp),
-                        )
-                    }
-                    Slider(
-                        value = volumeFraction,
-                        onValueChange = { v ->
-                            applyVolumeFraction(v)
-                            showControls()
-                        },
-                        modifier = Modifier.weight(1f),
-                        colors = SliderDefaults.colors(
-                            thumbColor = VaultAccent,
-                            activeTrackColor = VaultAccent,
-                            inactiveTrackColor = Color.White.copy(alpha = 0.3f),
-                        ),
-                    )
-
                     Box {
                         TextButton(
                             onClick = {

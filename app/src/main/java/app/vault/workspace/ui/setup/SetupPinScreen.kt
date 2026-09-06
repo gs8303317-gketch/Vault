@@ -1,10 +1,17 @@
 package app.vault.workspace.ui.setup
 
+import android.content.res.Configuration
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -14,6 +21,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import app.vault.workspace.auth.PinRules
 import app.vault.workspace.ui.components.PinDots
@@ -38,6 +46,8 @@ fun SetupPinScreen(
     } else {
         "Enter the same PIN again"
     }
+    val landscape =
+        LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     fun handleDigit(c: Char) {
         localError = null
@@ -83,25 +93,60 @@ fun SetupPinScreen(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Spacer(Modifier.height(48.dp))
+    @Composable
+    fun Header() {
         Text(title, style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(8.dp))
         Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = VaultTextMuted)
-        Spacer(Modifier.height(32.dp))
+        Spacer(Modifier.height(if (landscape) 12.dp else 32.dp))
         PinDots(filled = current.length)
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(12.dp))
         val err = localError ?: errorMessage
         if (err != null) {
             Text(err, color = VaultDanger, style = MaterialTheme.typography.bodyMedium)
         }
-        Spacer(Modifier.weight(1f))
-        PinPad(enabled = true, onDigit = ::handleDigit, onBackspace = ::handleBack)
-        Spacer(Modifier.height(24.dp))
+    }
+
+    if (landscape) {
+        Row(
+            Modifier
+                .fillMaxSize()
+                .padding(horizontal = 24.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .verticalScroll(rememberScrollState())
+                    .padding(end = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Header()
+            }
+            PinPad(
+                enabled = true,
+                onDigit = ::handleDigit,
+                onBackspace = ::handleBack,
+                compact = true,
+                modifier = Modifier
+                    .weight(1.1f)
+                    .width(320.dp),
+            )
+        }
+    } else {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Spacer(Modifier.height(48.dp))
+            Header()
+            Spacer(Modifier.weight(1f))
+            PinPad(enabled = true, onDigit = ::handleDigit, onBackspace = ::handleBack)
+            Spacer(Modifier.height(24.dp))
+        }
     }
 }

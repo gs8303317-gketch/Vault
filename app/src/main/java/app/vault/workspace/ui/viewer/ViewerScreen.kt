@@ -1,5 +1,6 @@
 package app.vault.workspace.ui.viewer
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -83,6 +84,12 @@ fun ViewerScreen(
     var showTrashConfirm by remember { mutableStateOf(false) }
     var chromeVisible by remember { mutableStateOf(true) }
     var videoPlaying by remember { mutableStateOf(false) }
+    var playerLocked by remember { mutableStateOf(false) }
+
+    // Gesture-lock must also block system/gesture back (and top chrome is hidden while locked).
+    BackHandler(enabled = playerLocked) {
+        // no-op: stay in player until unlock
+    }
 
     val immersive = item.category == VaultCategory.IMAGE ||
         item.category == VaultCategory.VIDEO
@@ -122,10 +129,17 @@ fun ViewerScreen(
                     onPlaybackActive = { active ->
                         videoPlaying = active
                         onPlaybackActive(active)
-                        if (!active) chromeVisible = true
+                        if (!active && !playerLocked) chromeVisible = true
                     },
                     onPlayerCreated = onPlayerCreated,
                     onControlsVisibilityChanged = { visible -> chromeVisible = visible },
+                    onGesturesLockedChanged = { locked ->
+                        playerLocked = locked
+                        if (locked) {
+                            chromeVisible = false
+                            menuOpen = false
+                        }
+                    },
                     modifier = Modifier.fillMaxSize(),
                 )
                 else -> {}
@@ -177,6 +191,7 @@ fun ViewerScreen(
                     title = item.displayName,
                     onPlaybackActive = onPlaybackActive,
                     onPlayerCreated = onPlayerCreated,
+                    onGesturesLockedChanged = { locked -> playerLocked = locked },
                     modifier = mod,
                 )
                 VaultCategory.DOCUMENT -> {

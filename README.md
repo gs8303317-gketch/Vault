@@ -1,6 +1,11 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.3.6** — VLC-style Phase 1 media player (long-press 2×, lock, speed, fit modes, polished overlays).
+Offline encrypted personal workspace for Android. **v0.3.7** — player chrome/lock/back fixes + landscape PIN unlock.
+
+## What this release adds (v0.3.7 / versionCode 14)
+
+- **Landscape PIN unlock/setup**: side-by-side compact pad so 0 / backspace stay reachable after rotate.
+- **Player polish**: remove bottom volume slider (edge volume gesture kept); top title/chrome hides with controls and stays hidden while locked; system back is blocked while gesture-locked.
 
 ## What this release adds (v0.3.6 / versionCode 13)
 
