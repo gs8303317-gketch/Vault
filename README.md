@@ -1,6 +1,11 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.3.5** — secure PDF viewing (no plaintext temp), PDF page jump, Change PIN, share-into-vault.
+Offline encrypted personal workspace for Android. **v0.3.6** — VLC-style Phase 1 media player (long-press 2×, lock, speed, fit modes, polished overlays).
+
+## What this release adds (v0.3.6 / versionCode 13)
+
+- **Phase 1 VLC-style player**: long-press hold = temporary 2× with animated overlay; gesture lock; playback speed menu (0.5×–2×); Fit / Fill / Stretch / Zoom; fade/scale overlays for volume, brightness, seek, speed.
+- Decrypting ExoPlayer path unchanged; still **no INTERNET**.
 
 ## What this release adds (v0.3.5 / versionCode 12)
 

@@ -9,8 +9,12 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -28,24 +32,32 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.BrightnessHigh
 import androidx.compose.material.icons.filled.Forward10
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,6 +75,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -78,16 +91,34 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import kotlin.math.abs
 
 private const val SKIP_MS = 10_000L
 private const val CONTROLS_HIDE_MS = 3_000L
+private const val OVERLAY_HIDE_MS = 900L
+private const val TEMP_SPEED = 2f
+
+internal val PLAYBACK_SPEEDS = floatArrayOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
+
+/**
+ * Video resize modes for PlayerView.
+ * Stretch uses FIXED_WIDTH as the closest edge-to-edge distort-ish fill Media3 exposes
+ * without a custom TextureView matrix (true anamorphic stretch is Phase-later polish).
+ */
+internal enum class VideoFitMode(val label: String, val resizeMode: Int) {
+    FIT("Fit", AspectRatioFrameLayout.RESIZE_MODE_FIT),
+    FILL("Fill", AspectRatioFrameLayout.RESIZE_MODE_FILL),
+    STRETCH("Stretch", AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH),
+    ZOOM("Zoom", AspectRatioFrameLayout.RESIZE_MODE_ZOOM),
+}
 
 /**
  * Premium offline player overlay on Media3 ExoPlayer (decrypting path unchanged).
  * Video: immersive black + brightness (left vertical) / volume (right vertical) /
- * horizontal scrub / double-tap seek. Audio: dark UI, large play/pause, seek + volume.
+ * horizontal scrub / double-tap seek / long-press 2× / lock / speed / fit modes.
+ * Audio: dark UI, large play/pause, seek + volume + speed + lock.
  *
  * Brightness writes the activity window [android.view.WindowManager.LayoutParams.screenBrightness]
  * (0.01f..1f) while playing. On dispose (leaving the player), the original window value is
@@ -174,7 +205,6 @@ private fun PremiumPlayerOverlay(
         context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     }
 
-    // Capture original window brightness before any gesture override (often BRIGHTNESS_OVERRIDE_NONE).
     val originalScreenBrightness = remember(activity) {
         activity?.window?.attributes?.screenBrightness
             ?: WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
@@ -200,8 +230,18 @@ private fun PremiumPlayerOverlay(
     var volumeOverlay by remember { mutableStateOf<Int?>(null) }
     var brightnessOverlay by remember { mutableStateOf<Int?>(null) }
     var seekOverlayMs by remember { mutableStateOf<Long?>(null) }
+    var lastVolumePct by remember { mutableIntStateOf(0) }
+    var lastBrightnessPct by remember { mutableIntStateOf(0) }
+    var lastSeekDelta by remember { mutableLongStateOf(0L) }
+    var speedBoostActive by remember { mutableStateOf(false) }
 
-    // Window brightness 0.01..1 for gestures; start from current override or mid
+    var gesturesLocked by remember { mutableStateOf(false) }
+    var baseSpeed by remember { mutableFloatStateOf(1f) }
+    var speedMenuOpen by remember { mutableStateOf(false) }
+    var fitMode by remember { mutableStateOf(VideoFitMode.FIT) }
+    var fitMenuOpen by remember { mutableStateOf(false) }
+    var lockHintTick by remember { mutableIntStateOf(0) }
+
     var brightness by remember {
         mutableFloatStateOf(
             activity?.window?.attributes?.screenBrightness
@@ -209,7 +249,6 @@ private fun PremiumPlayerOverlay(
                 ?: 0.5f,
         )
     }
-    // Fractional music volume 0..1 for smooth vertical drag
     var volumeFraction by remember {
         mutableFloatStateOf(
             run {
@@ -219,7 +258,29 @@ private fun PremiumPlayerOverlay(
         )
     }
 
+    fun applyBaseSpeed(speed: Float) {
+        val s = speed.coerceIn(0.25f, 2f)
+        baseSpeed = s
+        if (!speedBoostActive) {
+            player.playbackParameters = PlaybackParameters(s)
+        }
+    }
+
+    fun startTempBoost() {
+        if (speedBoostActive) return
+        speedBoostActive = true
+        player.playbackParameters = PlaybackParameters(TEMP_SPEED)
+        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+    }
+
+    fun endTempBoost() {
+        if (!speedBoostActive) return
+        speedBoostActive = false
+        player.playbackParameters = PlaybackParameters(baseSpeed)
+    }
+
     LaunchedEffect(player) {
+        player.playbackParameters = PlaybackParameters(baseSpeed)
         while (isActive) {
             if (!scrubbing) {
                 positionMs = player.currentPosition.coerceAtLeast(0L)
@@ -231,9 +292,9 @@ private fun PremiumPlayerOverlay(
         }
     }
 
-    LaunchedEffect(controlsVisible, isPlaying) {
-        onControlsVisibilityChanged(controlsVisible)
-        if (controlsVisible && isPlaying) {
+    LaunchedEffect(controlsVisible, isPlaying, gesturesLocked, speedMenuOpen, fitMenuOpen) {
+        onControlsVisibilityChanged(controlsVisible || gesturesLocked)
+        if (controlsVisible && isPlaying && !gesturesLocked && !speedMenuOpen && !fitMenuOpen) {
             delay(CONTROLS_HIDE_MS)
             controlsVisible = false
         }
@@ -241,20 +302,29 @@ private fun PremiumPlayerOverlay(
 
     LaunchedEffect(volumeOverlay) {
         if (volumeOverlay != null) {
-            delay(800)
+            lastVolumePct = volumeOverlay!!
+            delay(OVERLAY_HIDE_MS)
             volumeOverlay = null
         }
     }
     LaunchedEffect(brightnessOverlay) {
         if (brightnessOverlay != null) {
-            delay(800)
+            lastBrightnessPct = brightnessOverlay!!
+            delay(OVERLAY_HIDE_MS)
             brightnessOverlay = null
         }
     }
     LaunchedEffect(seekOverlayMs) {
         if (seekOverlayMs != null) {
+            lastSeekDelta = seekOverlayMs!!
             delay(700)
             seekOverlayMs = null
+        }
+    }
+    LaunchedEffect(lockHintTick) {
+        if (lockHintTick > 0) {
+            delay(1_200)
+            if (lockHintTick > 0) lockHintTick = 0
         }
     }
 
@@ -263,12 +333,14 @@ private fun PremiumPlayerOverlay(
     }
 
     fun togglePlay() {
+        if (gesturesLocked) return
         if (player.isPlaying) player.pause() else player.play()
         view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
         showControls()
     }
 
     fun seekBy(deltaMs: Long) {
+        if (gesturesLocked) return
         val dur = player.duration.coerceAtLeast(0L)
         val target = (player.currentPosition + deltaMs)
             .coerceIn(0L, if (dur > 0) dur else Long.MAX_VALUE)
@@ -298,6 +370,20 @@ private fun PremiumPlayerOverlay(
         brightnessOverlay = (v * 100).toInt()
     }
 
+    fun toggleLock() {
+        gesturesLocked = !gesturesLocked
+        speedMenuOpen = false
+        fitMenuOpen = false
+        endTempBoost()
+        view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+        if (gesturesLocked) {
+            controlsVisible = false
+            lockHintTick = lockHintTick + 1
+        } else {
+            showControls()
+        }
+    }
+
     Box(Modifier.fillMaxSize()) {
         if (!isAudio) {
             AndroidView(
@@ -308,16 +394,16 @@ private fun PremiumPlayerOverlay(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                         )
                         useController = false
-                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        resizeMode = fitMode.resizeMode
                         keepScreenOn = true
                         this.player = player
                     }
                 },
-                update = { view ->
-                    view.player = player
-                    view.keepScreenOn = true
-                    view.useController = false
-                    view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                update = { pv ->
+                    pv.player = player
+                    pv.keepScreenOn = true
+                    pv.useController = false
+                    pv.resizeMode = fitMode.resizeMode
                 },
                 modifier = Modifier.fillMaxSize(),
             )
@@ -354,16 +440,15 @@ private fun PremiumPlayerOverlay(
             }
         }
 
-        // Gesture layer: vertical = brightness(left)/volume(right), horizontal = scrub,
-        // tap = toggle controls, double-tap = ±10s
         Box(
             Modifier
                 .fillMaxSize()
-                .pointerInput(isAudio) {
+                .pointerInput(isAudio, gesturesLocked) {
                     val width = size.width.toFloat().coerceAtLeast(1f)
                     val height = size.height.toFloat().coerceAtLeast(1f)
                     val tapSlop = viewConfiguration.touchSlop
                     val doubleTapTimeout = viewConfiguration.doubleTapTimeoutMillis
+                    val longPressTimeout = viewConfiguration.longPressTimeoutMillis.toLong()
                     var lastTapTime = 0L
                     var lastTapX = 0f
 
@@ -376,12 +461,29 @@ private fun PremiumPlayerOverlay(
                         var mode = 0 // 0 undecided, 1 vertical, 2 horizontal
                         var dragged = false
                         var gestureSeekAccum = 0L
-                        // Gesture-local trackers avoid stale Compose snapshot reads mid-drag
                         var gestureVol = volumeFraction
                         var gestureBright = brightness
+                        var longPressArmed = !gesturesLocked
+                        var boostOn = false
+                        val downTime = System.currentTimeMillis()
 
                         while (true) {
-                            val event = awaitPointerEvent()
+                            val remaining = longPressTimeout - (System.currentTimeMillis() - downTime)
+                            val event = if (longPressArmed && !boostOn && !dragged && remaining > 0L) {
+                                withTimeoutOrNull(remaining) { awaitPointerEvent() }
+                            } else {
+                                awaitPointerEvent()
+                            }
+
+                            if (event == null) {
+                                // Held still past long-press timeout → temporary 2×
+                                if (longPressArmed && !boostOn && !dragged && !gesturesLocked) {
+                                    boostOn = true
+                                    startTempBoost()
+                                }
+                                continue
+                            }
+
                             val change = event.changes.firstOrNull { it.id == down.id } ?: break
 
                             if (change.pressed) {
@@ -391,18 +493,27 @@ private fun PremiumPlayerOverlay(
                                 totalDy += dy
                                 change.consume()
 
-                                if (mode == 0) {
-                                    val adx = abs(totalDx)
-                                    val ady = abs(totalDy)
-                                    if (adx > tapSlop || ady > tapSlop) {
-                                        mode = if (ady >= adx) 1 else 2
-                                        dragged = true
-                                        gestureVol = volumeFraction
-                                        gestureBright = brightness
-                                        if (mode == 2) {
-                                            gestureSeekAccum = 0L
-                                            seekOverlayMs = 0L
-                                        }
+                                val adx = abs(totalDx)
+                                val ady = abs(totalDy)
+                                if (adx > tapSlop || ady > tapSlop) {
+                                    dragged = true
+                                    longPressArmed = false
+                                    if (boostOn) {
+                                        endTempBoost()
+                                        boostOn = false
+                                    }
+                                }
+
+                                if (gesturesLocked) continue
+                                if (boostOn) continue
+
+                                if (mode == 0 && dragged) {
+                                    mode = if (ady >= adx) 1 else 2
+                                    gestureVol = volumeFraction
+                                    gestureBright = brightness
+                                    if (mode == 2) {
+                                        gestureSeekAccum = 0L
+                                        seekOverlayMs = 0L
                                     }
                                 }
                                 when (mode) {
@@ -432,6 +543,17 @@ private fun PremiumPlayerOverlay(
                                     }
                                 }
                             } else {
+                                if (boostOn) {
+                                    endTempBoost()
+                                    boostOn = false
+                                    break
+                                }
+                                if (gesturesLocked) {
+                                    if (!dragged) {
+                                        lockHintTick = lockHintTick + 1
+                                    }
+                                    break
+                                }
                                 if (!dragged) {
                                     val now = System.currentTimeMillis()
                                     val isDouble = now - lastTapTime <= doubleTapTimeout &&
@@ -451,42 +573,81 @@ private fun PremiumPlayerOverlay(
                                 break
                             }
                         }
+                        if (boostOn) endTempBoost()
                     }
                 },
         )
 
-        volumeOverlay?.let { pct ->
+        AnimatedVisibility(
+            visible = volumeOverlay != null,
+            enter = fadeIn(spring(stiffness = Spring.StiffnessMedium)) +
+                scaleIn(initialScale = 0.85f, animationSpec = spring(stiffness = Spring.StiffnessMediumLow)),
+            exit = fadeOut() + scaleOut(targetScale = 0.9f),
+            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 24.dp),
+        ) {
             TransientPercentOverlay(
                 icon = Icons.AutoMirrored.Filled.VolumeUp,
-                percent = pct,
-                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 24.dp),
+                percent = lastVolumePct,
             )
         }
         if (!isAudio) {
-            brightnessOverlay?.let { pct ->
+            AnimatedVisibility(
+                visible = brightnessOverlay != null,
+                enter = fadeIn(spring(stiffness = Spring.StiffnessMedium)) +
+                    scaleIn(initialScale = 0.85f, animationSpec = spring(stiffness = Spring.StiffnessMediumLow)),
+                exit = fadeOut() + scaleOut(targetScale = 0.9f),
+                modifier = Modifier.align(Alignment.CenterStart).padding(start = 24.dp),
+            ) {
                 TransientPercentOverlay(
                     icon = Icons.Default.BrightnessHigh,
-                    percent = pct,
-                    modifier = Modifier.align(Alignment.CenterStart).padding(start = 24.dp),
+                    percent = lastBrightnessPct,
                 )
             }
         }
-        seekOverlayMs?.let { delta ->
-            val sign = if (delta >= 0) "+" else "-"
-            Text(
-                "$sign${formatPlayerTime(abs(delta))}",
-                color = Color.White,
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
+        AnimatedVisibility(
+            visible = seekOverlayMs != null && !speedBoostActive,
+            enter = fadeIn() + scaleIn(initialScale = 0.9f),
+            exit = fadeOut() + scaleOut(targetScale = 0.92f),
+            modifier = Modifier.align(Alignment.Center),
+        ) {
+            val sign = if (lastSeekDelta >= 0) "+" else "-"
+            OverlayChip(text = "$sign${formatPlayerTime(abs(lastSeekDelta))}")
+        }
+        AnimatedVisibility(
+            visible = speedBoostActive,
+            enter = fadeIn() + scaleIn(initialScale = 0.8f),
+            exit = fadeOut() + scaleOut(targetScale = 0.9f),
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 72.dp),
+        ) {
+            OverlayChip(text = "2×", large = true)
+        }
+        AnimatedVisibility(
+            visible = gesturesLocked && lockHintTick > 0,
+            enter = fadeIn() + scaleIn(initialScale = 0.9f),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.Center),
+        ) {
+            OverlayChip(text = "Locked — tap unlock")
+        }
+
+        if (gesturesLocked) {
+            IconButton(
+                onClick = { toggleLock() },
                 modifier = Modifier
-                    .align(Alignment.Center)
-                    .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-            )
+                    .align(Alignment.TopEnd)
+                    .padding(12.dp)
+                    .background(Color.Black.copy(alpha = 0.45f), CircleShape),
+            ) {
+                Icon(
+                    Icons.Default.Lock,
+                    contentDescription = "Unlock gestures",
+                    tint = VaultAccent,
+                )
+            }
         }
 
         AnimatedVisibility(
-            visible = controlsVisible,
+            visible = controlsVisible && !gesturesLocked,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter),
@@ -499,7 +660,7 @@ private fun PremiumPlayerOverlay(
                 Modifier
                     .fillMaxWidth()
                     .background(Color.Black.copy(alpha = 0.55f))
-                    .padding(horizontal = 16.dp, vertical = if (isAudio) 20.dp else 12.dp),
+                    .padding(horizontal = 12.dp, vertical = if (isAudio) 20.dp else 12.dp),
             ) {
                 Row(
                     Modifier.fillMaxWidth(),
@@ -554,7 +715,7 @@ private fun PremiumPlayerOverlay(
                             modifier = Modifier.size(if (isAudio) 36.dp else 32.dp),
                         )
                     }
-                    Spacer(Modifier.width(16.dp))
+                    Spacer(Modifier.width(12.dp))
                     IconButton(
                         onClick = { togglePlay() },
                         modifier = Modifier
@@ -568,7 +729,7 @@ private fun PremiumPlayerOverlay(
                             modifier = Modifier.size(if (isAudio) 40.dp else 32.dp),
                         )
                     }
-                    Spacer(Modifier.width(16.dp))
+                    Spacer(Modifier.width(12.dp))
                     IconButton(onClick = { seekBy(SKIP_MS) }) {
                         Icon(
                             Icons.Default.Forward10,
@@ -579,14 +740,13 @@ private fun PremiumPlayerOverlay(
                     }
                 }
 
-                Spacer(Modifier.height(if (isAudio) 12.dp else 4.dp))
+                Spacer(Modifier.height(if (isAudio) 8.dp else 2.dp))
                 Row(
                     Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     IconButton(
                         onClick = {
-                            // Mute toggle via chrome (gestures still work)
                             if (volumeFraction > 0.01f) {
                                 applyVolumeFraction(0f)
                             } else {
@@ -615,10 +775,134 @@ private fun PremiumPlayerOverlay(
                             inactiveTrackColor = Color.White.copy(alpha = 0.3f),
                         ),
                     )
+
+                    Box {
+                        TextButton(
+                            onClick = {
+                                speedMenuOpen = true
+                                fitMenuOpen = false
+                                showControls()
+                            },
+                        ) {
+                            Icon(
+                                Icons.Default.Speed,
+                                contentDescription = null,
+                                tint = VaultAccent,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                formatPlaybackSpeed(baseSpeed),
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = speedMenuOpen,
+                            onDismissRequest = { speedMenuOpen = false },
+                        ) {
+                            PLAYBACK_SPEEDS.forEach { speed ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            formatPlaybackSpeed(speed),
+                                            fontWeight = if (speed == baseSpeed) {
+                                                FontWeight.Bold
+                                            } else {
+                                                FontWeight.Normal
+                                            },
+                                            color = if (speed == baseSpeed) VaultAccent else VaultText,
+                                        )
+                                    },
+                                    onClick = {
+                                        applyBaseSpeed(speed)
+                                        speedMenuOpen = false
+                                        view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                                        showControls()
+                                    },
+                                )
+                            }
+                        }
+                    }
+
+                    if (!isAudio) {
+                        Box {
+                            IconButton(
+                                onClick = {
+                                    fitMenuOpen = true
+                                    speedMenuOpen = false
+                                    showControls()
+                                },
+                            ) {
+                                Icon(
+                                    Icons.Default.AspectRatio,
+                                    contentDescription = "Fit mode",
+                                    tint = VaultTextMuted,
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = fitMenuOpen,
+                                onDismissRequest = { fitMenuOpen = false },
+                            ) {
+                                VideoFitMode.entries.forEach { mode ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                mode.label,
+                                                fontWeight = if (fitMode == mode) {
+                                                    FontWeight.Bold
+                                                } else {
+                                                    FontWeight.Normal
+                                                },
+                                                color = if (fitMode == mode) VaultAccent else VaultText,
+                                            )
+                                        },
+                                        onClick = {
+                                            fitMode = mode
+                                            fitMenuOpen = false
+                                            view.performHapticFeedback(
+                                                HapticFeedbackConstants.CONTEXT_CLICK,
+                                            )
+                                            showControls()
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    IconButton(onClick = { toggleLock() }) {
+                        Icon(
+                            Icons.Default.LockOpen,
+                            contentDescription = "Lock gestures",
+                            tint = VaultTextMuted,
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun OverlayChip(
+    text: String,
+    modifier: Modifier = Modifier,
+    large: Boolean = false,
+) {
+    Text(
+        text,
+        color = Color.White,
+        fontSize = if (large) 28.sp else 18.sp,
+        fontWeight = FontWeight.Bold,
+        modifier = modifier
+            .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(10.dp))
+            .padding(
+                horizontal = if (large) 20.dp else 16.dp,
+                vertical = if (large) 12.dp else 10.dp,
+            ),
+    )
 }
 
 @Composable
@@ -649,6 +933,21 @@ internal fun formatPlayerTime(ms: Long): String {
     } else {
         "%d:%02d".format(m, s)
     }
+}
+
+internal fun formatPlaybackSpeed(speed: Float): String {
+    val normalized = if (abs(speed - speed.toInt()) < 0.001f) {
+        speed.toInt().toString()
+    } else {
+        (("%.2f").format(speed)).trimEnd('0').trimEnd('.')
+    }
+    return "${normalized}×"
+}
+
+internal fun nextVideoFitMode(current: VideoFitMode): VideoFitMode {
+    val values = VideoFitMode.entries
+    val idx = values.indexOf(current).coerceAtLeast(0)
+    return values[(idx + 1) % values.size]
 }
 
 private fun Context.findActivity(): Activity? {
