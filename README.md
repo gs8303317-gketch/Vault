@@ -1,6 +1,12 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.4.11** — final seek architecture: Path A play = EncryptedDataSource only; Path B prepare once (import/first open) for unseekable containers; no seek-time remux / no “Preparing seek…” on scrub.
+Offline encrypted personal workspace for Android. **v0.4.12** — seekReady stamp guard + known-good faststart MP4 encrypt/random-access regression; Path A/B architecture unchanged from v0.4.11.
+
+## What this release adds (v0.4.12 / versionCode 29)
+
+- **Stale seekReady guard**: `runVideoSeekPrepare` no longer trusts `seekReady` alone — requires blob present and `sizeBytes == VAULT1 plaintextSize`; mismatch clears the flag and re-runs prepare. `AlreadyReady` / `Rewritten` always stamp `setSizeBytes` + `setSeekReady(true)`.
+- **Regression**: JVM `EncryptedSeekablePlaybackTest` — known-good faststart MP4 → sniff alreadySeekable → encrypt → `decryptRange` / `ChunkCache` random access at head/mid/near-end (no prepare/remux; no ExoPlayer on JVM).
+- Still **no PiP**. No architecture change.
 
 ## What this release adds (v0.4.11 / versionCode 28)
 
@@ -149,7 +155,7 @@ Nested folders, bulk export, tablet two-pane, import cancel/resume, image editor
 
 ## Limitations (honest)
 
-- **Destructive DB migration on upgrade to v0.3.0**: Room schema wipe via `fallbackToDestructiveMigration` — early-app OK; re-import after upgrade if you had data on v0.2.x. **v0.3.1–v0.4.10 Room v3**; **v0.4.11 bumps Room to v4** (`seekReady`) — destructive migration wipes local DB on upgrade (re-import).
+- **Destructive DB migration on upgrade to v0.3.0**: Room schema wipe via `fallbackToDestructiveMigration` — early-app OK; re-import after upgrade if you had data on v0.2.x. **v0.3.1–v0.4.10 Room v3**; **v0.4.11+ bumps Room to v4** (`seekReady`) — destructive migration wipes local DB on upgrade (re-import).
 - Biometric wrap is invalidated if biometrics are re-enrolled on the device; also cleared after **Change PIN** — re-enable from Settings after PIN unlock
 - Rooted / unlocked session can read vault memory and files
 - Screenshots of unlocked screens work (intentional for testing in P0–P3)

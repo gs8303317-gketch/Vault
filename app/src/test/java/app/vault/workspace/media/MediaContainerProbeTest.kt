@@ -15,7 +15,7 @@ class MediaContainerProbeTest {
     fun sniff_moovBeforeMdat_isSeekable() {
         val f = File.createTempFile("vault-probe-seek", ".mp4")
         try {
-            writeFakeMp4(f, moovBeforeMdat = true, withMoof = false)
+            FakeMp4.write(f, moovBeforeMdat = true, withMoof = false)
             val r = MediaContainerProbe.sniffFile(f)
             assertEquals(MediaContainerProbe.Kind.PROGRESSIVE_SEEKABLE_MP4, r.kind)
             assertTrue(r.alreadySeekable)
@@ -28,7 +28,7 @@ class MediaContainerProbeTest {
     fun sniff_moovAfterMdat_needsFaststart() {
         val f = File.createTempFile("vault-probe-moovend", ".mp4")
         try {
-            writeFakeMp4(f, moovBeforeMdat = false, withMoof = false)
+            FakeMp4.write(f, moovBeforeMdat = false, withMoof = false)
             val r = MediaContainerProbe.sniffFile(f)
             assertEquals(MediaContainerProbe.Kind.MP4_MOOV_AT_END, r.kind)
             assertFalse(r.alreadySeekable)
@@ -41,7 +41,7 @@ class MediaContainerProbeTest {
     fun sniff_fragmentedHasMoof() {
         val f = File.createTempFile("vault-probe-fmp4", ".mp4")
         try {
-            writeFakeMp4(f, moovBeforeMdat = true, withMoof = true)
+            FakeMp4.write(f, moovBeforeMdat = true, withMoof = true)
             val r = MediaContainerProbe.sniffFile(f)
             assertEquals(MediaContainerProbe.Kind.FRAGMENTED_MP4, r.kind)
             assertFalse(r.alreadySeekable)
@@ -74,7 +74,7 @@ class MediaContainerProbeTest {
     fun mp4BoxParser_readsTopLevel() {
         val f = File.createTempFile("vault-boxes", ".mp4")
         try {
-            writeFakeMp4(f, moovBeforeMdat = true, withMoof = false)
+            FakeMp4.write(f, moovBeforeMdat = true, withMoof = false)
             val layout = Mp4BoxParser.analyze(f)
             assertNotNull(layout)
             assertTrue(layout!!.moovOffset >= 0)
@@ -90,7 +90,7 @@ class MediaContainerProbeTest {
         val input = File.createTempFile("vault-fs-in", ".mp4")
         val output = File.createTempFile("vault-fs-out", ".mp4")
         try {
-            writeFakeMp4(input, moovBeforeMdat = false, withMoof = false)
+            FakeMp4.write(input, moovBeforeMdat = false, withMoof = false)
             val before = Mp4BoxParser.analyze(input)!!
             assertTrue(before.moovOffset > before.mdatOffset)
             assertTrue(Mp4Faststart.moveMoovToStart(input, output))
@@ -127,43 +127,5 @@ class MediaContainerProbeTest {
         // entry is at offset 8 (moov hdr) + 8 (stco hdr) + 4 (ver) + 4 (count) = 24
         val entry = ByteBuffer.wrap(arr, 24, 4).order(ByteOrder.BIG_ENDIAN).int
         assertEquals(150, entry)
-    }
-
-    /** Build a tiny fake MP4: ftyp + (moov|mdat order) + optional moof. */
-    private fun writeFakeMp4(file: File, moovBeforeMdat: Boolean, withMoof: Boolean) {
-        fun box(type: String, payload: ByteArray): ByteArray {
-            val bb = ByteBuffer.allocate(8 + payload.size).order(ByteOrder.BIG_ENDIAN)
-            bb.putInt(8 + payload.size)
-            bb.put(type.toByteArray(Charsets.US_ASCII))
-            bb.put(payload)
-            return bb.array()
-        }
-        val ftyp = box("ftyp", "isomisom".toByteArray(Charsets.US_ASCII))
-        // Include a trivial stco so faststart patch has something to touch
-        val stcoPayload = ByteBuffer.allocate(12).order(ByteOrder.BIG_ENDIAN)
-        stcoPayload.putInt(0)
-        stcoPayload.putInt(1)
-        stcoPayload.putInt(32)
-        val stco = box("stco", stcoPayload.array())
-        val stbl = box("stbl", stco)
-        val minf = box("minf", stbl)
-        val mdia = box("mdia", minf)
-        val trak = box("trak", mdia)
-        val moov = box("moov", trak)
-        val mdat = box("mdat", ByteArray(64) { 0xAB.toByte() })
-        val moof = box("moof", ByteArray(8))
-        val parts = mutableListOf(ftyp)
-        if (moovBeforeMdat) {
-            parts += moov
-            if (withMoof) parts += moof
-            parts += mdat
-        } else {
-            parts += mdat
-            parts += moov
-            if (withMoof) parts += moof
-        }
-        file.outputStream().use { out ->
-            for (p in parts) out.write(p)
-        }
     }
 }

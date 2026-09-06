@@ -519,13 +519,28 @@ class VaultRepository(
 
     /**
      * Run Path B prepare and update [seekReady]. Returns true if seekReady is now true.
+     * If [VaultItemEntity.seekReady] is already true, verifies blob + size stamp before skipping.
      */
     suspend fun runVideoSeekPrepare(
         itemId: String,
         onProgress: ((Float) -> Unit)? = null,
     ): Boolean = withContext(Dispatchers.IO) {
         val entity = dao.getById(itemId) ?: return@withContext false
-        if (entity.seekReady) return@withContext true
+        if (entity.seekReady) {
+            val vat = blobFile(itemId)
+            val stampOk = try {
+                vat.exists() &&
+                    SeekReadyStamp.matches(
+                        entity.sizeBytes,
+                        VaultCrypto.readHeader(vat).plaintextSize,
+                    )
+            } catch (_: Exception) {
+                false
+            }
+            if (stampOk) return@withContext true
+            // Stale / missing / header mismatch — clear flag and continue prepare.
+            dao.setSeekReady(itemId, false)
+        }
         if (!entity.mimeType.startsWith("video/", ignoreCase = true)) {
             dao.setSeekReady(itemId, true)
             return@withContext true
@@ -541,17 +556,10 @@ class VaultRepository(
                     onProgress = onProgress,
                 )
             ) {
-                VideoSeekPrepare.Outcome.AlreadyReady -> {
-                    dao.setSeekReady(itemId, true)
-                    true
-                }
-                VideoSeekPrepare.Outcome.Rewritten -> {
-                    try {
-                        val header = VaultCrypto.readHeader(blobFile(itemId))
-                        dao.setSizeBytes(itemId, header.plaintextSize)
-                    } catch (_: Exception) {
-                    }
-                    dao.setSeekReady(itemId, true)
+                VideoSeekPrepare.Outcome.AlreadyReady,
+                VideoSeekPrepare.Outcome.Rewritten,
+                -> {
+                    stampSeekReady(itemId)
                     true
                 }
                 is VideoSeekPrepare.Outcome.Failed -> {
@@ -562,6 +570,16 @@ class VaultRepository(
         } finally {
             KeyHierarchy.wipe(dek)
         }
+    }
+
+    /** Align sizeBytes to VAULT1 plaintextSize and set seekReady=true. */
+    private suspend fun stampSeekReady(itemId: String) {
+        try {
+            val header = VaultCrypto.readHeader(blobFile(itemId))
+            dao.setSizeBytes(itemId, header.plaintextSize)
+        } catch (_: Exception) {
+        }
+        dao.setSeekReady(itemId, true)
     }
 
     private fun queryDisplayName(uri: Uri): String? {
