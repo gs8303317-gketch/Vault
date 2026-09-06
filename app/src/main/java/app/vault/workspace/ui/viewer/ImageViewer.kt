@@ -15,25 +15,33 @@ import android.view.WindowManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import android.view.View
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculateCentroidSize
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Crop
@@ -46,7 +54,6 @@ import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -61,9 +68,12 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -74,6 +84,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import app.vault.workspace.image.ImageCrop
 import app.vault.workspace.ui.theme.VaultAccent
 import app.vault.workspace.ui.theme.VaultTextMuted
@@ -132,12 +143,13 @@ fun ImageViewer(
     onSlideshowIntervalMsChange: (Long) -> Unit = {},
     /** In-vault crop: normalized rect → repository crop/replace. Null disables crop button. */
     onCropConfirm: (suspend (left: Float, top: Float, right: Float, bottom: Float) -> Result<Unit>)? = null,
+    /** Tool-rail / crop interactions — parent resets chrome auto-hide timer. */
+    onControlsInteraction: () -> Unit = {},
 ) {
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
     var gifMovie by remember { mutableStateOf<Movie?>(null) }
     var gifBytes by remember { mutableStateOf<ByteArray?>(null) }
     var gifCanvasBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var frameEpoch by remember { mutableIntStateOf(0) }
     var intrinsicW by remember { mutableIntStateOf(0) }
     var intrinsicH by remember { mutableIntStateOf(0) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -153,6 +165,7 @@ fun ImageViewer(
     val currentOnNext by rememberUpdatedState(onNext)
     val currentSlideshowPlaying by rememberUpdatedState(slideshowPlaying)
     val currentOnSlideshowPlayingChange by rememberUpdatedState(onSlideshowPlayingChange)
+    val currentOnControlsInteraction by rememberUpdatedState(onControlsInteraction)
     val currentIntervalMs by rememberUpdatedState(interval.ms)
     val scope = rememberCoroutineScope()
     var reloadEpoch by remember { mutableIntStateOf(0) }
@@ -180,67 +193,65 @@ fun ImageViewer(
         bitmap?.let { if (!it.isRecycled) it.recycle() }
         bitmap = null
         try {
-            val bytes = withContext(Dispatchers.IO) { loadBytes() }
-            val isGif = mimeType.equals("image/gif", ignoreCase = true)
-            if (isGif) {
-                val movie = withContext(Dispatchers.IO) {
-                    Movie.decodeByteArray(bytes, 0, bytes.size)
+            data class Loaded(
+                val bitmap: Bitmap?,
+                val movie: Movie?,
+                val gifBytes: ByteArray?,
+                val w: Int,
+                val h: Int,
+            )
+            val loaded = withContext(Dispatchers.IO) {
+                val bytes = loadBytes()
+                val isGif = mimeType.equals("image/gif", ignoreCase = true)
+                if (isGif) {
+                    val movie = Movie.decodeByteArray(bytes, 0, bytes.size)
+                    if (movie != null && movie.width() > 0 && movie.height() > 0 && movie.duration() > 0) {
+                        // Keep plaintext only while Movie is alive; wipe on dispose.
+                        return@withContext Loaded(
+                            bitmap = null,
+                            movie = movie,
+                            gifBytes = bytes,
+                            w = movie.width(),
+                            h = movie.height(),
+                        )
+                    }
                 }
-                if (movie != null && movie.width() > 0 && movie.height() > 0 && movie.duration() > 0) {
-                    intrinsicW = movie.width()
-                    intrinsicH = movie.height()
-                    val canvasBmp = Bitmap.createBitmap(
-                        movie.width().coerceAtLeast(1),
-                        movie.height().coerceAtLeast(1),
-                        Bitmap.Config.ARGB_8888,
-                    )
-                    gifMovie = movie
-                    gifBytes = bytes
-                    gifCanvasBitmap = canvasBmp
-                    bitmap = canvasBmp
-                    hudVisible = true
-                    return@LaunchedEffect
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                var sample = 1
+                val maxSide = 4096
+                while (bounds.outWidth / sample > maxSide || bounds.outHeight / sample > maxSide) {
+                    sample *= 2
                 }
-                // Static fallback if Movie decode fails / not animated
+                val decode = BitmapFactory.Options().apply { inSampleSize = sample }
+                val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, decode)
+                bytes.fill(0)
+                Loaded(
+                    bitmap = decoded,
+                    movie = null,
+                    gifBytes = null,
+                    w = bounds.outWidth,
+                    h = bounds.outHeight,
+                )
             }
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-            intrinsicW = bounds.outWidth
-            intrinsicH = bounds.outHeight
-            var sample = 1
-            val maxSide = 4096
-            while (bounds.outWidth / sample > maxSide || bounds.outHeight / sample > maxSide) {
-                sample *= 2
-            }
-            val decode = BitmapFactory.Options().apply { inSampleSize = sample }
-            val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, decode)
-            // Wipe plaintext bytes after static decode (GIF path keeps bytes for Movie).
-            bytes.fill(0)
-            bitmap = decoded
-            if (bitmap == null) {
-                error = "Cannot decode image"
-            } else {
+            intrinsicW = loaded.w
+            intrinsicH = loaded.h
+            if (loaded.movie != null) {
+                gifMovie = loaded.movie
+                gifBytes = loaded.gifBytes
+                // Placeholder so UI leaves the loading spinner; GIF draws via AndroidView.
+                bitmap = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
                 hudVisible = true
+            } else {
+                bitmap = loaded.bitmap
+                if (bitmap == null) {
+                    error = "Cannot decode image"
+                } else {
+                    hudVisible = true
+                }
             }
         } catch (e: Exception) {
             error = e.message ?: "Failed to load image"
-        }
-    }
-
-    // Animate GIF frames on the main thread; Movie.setTime + draw into reusable bitmap.
-    LaunchedEffect(gifMovie, gifCanvasBitmap) {
-        val movie = gifMovie ?: return@LaunchedEffect
-        val canvasBmp = gifCanvasBitmap ?: return@LaunchedEffect
-        val dur = movie.duration().coerceAtLeast(1)
-        val start = SystemClock.uptimeMillis()
-        val canvas = Canvas(canvasBmp)
-        while (isActive) {
-            val t = ((SystemClock.uptimeMillis() - start) % dur).toInt()
-            movie.setTime(t)
-            canvasBmp.eraseColor(android.graphics.Color.TRANSPARENT)
-            movie.draw(canvas, 0f, 0f)
-            frameEpoch++
-            delay(16L)
         }
     }
 
@@ -303,6 +314,10 @@ fun ImageViewer(
         if (currentSlideshowPlaying) currentOnSlideshowPlayingChange(false)
     }
 
+    fun keepChrome() {
+        currentOnControlsInteraction()
+    }
+
     fun resetTransform(keepFit: Boolean = true) {
         scale = 1f
         offset = Offset.Zero
@@ -332,36 +347,35 @@ fun ImageViewer(
                     val containerW = constraints.maxWidth.toFloat().coerceAtLeast(1f)
                     val containerH = constraints.maxHeight.toFloat().coerceAtLeast(1f)
                     val density = LocalDensity.current
-                    val srcW = bmp.width.toFloat()
-                    val srcH = bmp.height.toFloat()
+                    val srcW = (if (intrinsicW > 0) intrinsicW else bmp.width).toFloat()
+                    val srcH = (if (intrinsicH > 0) intrinsicH else bmp.height).toFloat()
                     val display = remember(srcW, srcH, containerW, containerH, fitMode, rotationDeg) {
                         imageDisplaySize(srcW, srcH, containerW, containerH, fitMode, rotationDeg)
                     }
                     val dispW = display.first
                     val dispH = display.second
+                    val imageRectInOverlay = remember(dispW, dispH, containerW, containerH) {
+                        val left = ((containerW - dispW) / 2f).coerceAtLeast(0f)
+                        val top = ((containerH - dispH) / 2f).coerceAtLeast(0f)
+                        Rect(left, top, left + dispW, top + dispH)
+                    }
 
                     fun clamp(raw: Offset, s: Float): Offset =
                         clampImageOffset(raw, s, dispW, dispH, containerW, containerH)
 
-                    // Re-wrap each GIF frame so Compose invalidates the mutable bitmap.
-                    val imageBitmap = remember(frameEpoch, bmp) { bmp.asImageBitmap() }
-                    Image(
-                        bitmap = imageBitmap,
-                        contentDescription = title ?: "Image",
-                        contentScale = ContentScale.FillBounds,
-                        modifier = Modifier
-                            .size(
-                                width = with(density) { dispW.toDp() },
-                                height = with(density) { dispH.toDp() },
-                            )
-                            .graphicsLayer(
-                                scaleX = scale * if (flipH) -1f else 1f,
-                                scaleY = scale * if (flipV) -1f else 1f,
-                                rotationZ = rotationDeg.toFloat(),
-                                translationX = offset.x,
-                                translationY = offset.y,
-                            )
-                            .pointerInput(
+                    val contentModifier = Modifier
+                        .size(
+                            width = with(density) { dispW.toDp() },
+                            height = with(density) { dispH.toDp() },
+                        )
+                        .graphicsLayer(
+                            scaleX = scale * if (flipH) -1f else 1f,
+                            scaleY = scale * if (flipV) -1f else 1f,
+                            rotationZ = rotationDeg.toFloat(),
+                            translationX = offset.x,
+                            translationY = offset.y,
+                        )
+                        .pointerInput(
                                 onSingleTap,
                                 onPrevious,
                                 onNext,
@@ -517,8 +531,71 @@ fun ImageViewer(
                                         }
                                     }
                                 }
+                            }
+
+                    val movie = gifMovie
+                    if (movie != null) {
+                        GifMovieAndroidView(
+                            movie = movie,
+                            contentDescription = title ?: "GIF",
+                            modifier = contentModifier,
+                        )
+                    } else {
+                        val imageBitmap = remember(bmp) { bmp.asImageBitmap() }
+                        Image(
+                            bitmap = imageBitmap,
+                            contentDescription = title ?: "Image",
+                            contentScale = ContentScale.FillBounds,
+                            modifier = contentModifier,
+                        )
+                    }
+
+                    if (cropping) {
+                        ImageCropOverlay(
+                            norm = cropNorm,
+                            onNormChange = { cropNorm = it },
+                            busy = cropBusy,
+                            imageRectInOverlay = imageRectInOverlay,
+                            onCancel = {
+                                if (!cropBusy) cropping = false
                             },
-                    )
+                            onConfirm = {
+                                val confirm = onCropConfirm ?: return@ImageCropOverlay
+                                if (cropBusy) return@ImageCropOverlay
+                                cropBusy = true
+                                keepChrome()
+                                scope.launch {
+                                    val n = ImageCrop.clampNormRect(
+                                        cropNorm.left, cropNorm.top, cropNorm.right, cropNorm.bottom,
+                                    )
+                                    val result = try {
+                                        confirm(n.left, n.top, n.right, n.bottom)
+                                    } catch (e: Exception) {
+                                        Result.failure(e)
+                                    }
+                                    cropBusy = false
+                                    result.fold(
+                                        onSuccess = {
+                                            cropping = false
+                                            resetTransform(keepFit = false)
+                                            reloadEpoch++
+                                            haptic()
+                                            Toast.makeText(view.context, "Cropped", Toast.LENGTH_SHORT).show()
+                                        },
+                                        onFailure = { e ->
+                                            Log.e("VaultImage", "crop failed", e)
+                                            Toast.makeText(
+                                                view.context,
+                                                e.message ?: "Crop failed",
+                                                Toast.LENGTH_SHORT,
+                                            ).show()
+                                        },
+                                    )
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
                 }
             }
         }
@@ -544,70 +621,61 @@ fun ImageViewer(
             )
         }
 
-        // Premium bottom tool rail (Phase 1–2 transforms/slideshow + Phase 3 crop entry)
+        // Premium bottom tool rail — single scrollable row (no IconButton clip / truncation)
         AnimatedVisibility(
             visible = controlsVisible && bitmap != null && !cropping,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter),
         ) {
-            Column(
+            Row(
                 Modifier
                     .fillMaxWidth()
                     .background(Color.Black.copy(alpha = 0.55f))
                     .navigationBarsPadding()
-                    .padding(horizontal = 8.dp, vertical = 10.dp),
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    IconButton(onClick = {
+                ImageToolRailItem(
+                    icon = Icons.Default.Rotate90DegreesCw,
+                    label = "Rotate",
+                    tint = VaultAccent,
+                    onClick = {
+                        keepChrome()
                         rotationDeg = (rotationDeg + 90) % 360
                         offset = Offset.Zero
                         scale = 1f
                         haptic()
-                    }) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                Icons.Default.Rotate90DegreesCw,
-                                contentDescription = "Rotate",
-                                tint = VaultAccent,
-                                modifier = Modifier.size(22.dp),
-                            )
-                            Text("Rotate", color = Color.White, fontSize = 10.sp)
-                        }
-                    }
-                    IconButton(onClick = {
+                    },
+                )
+                ImageToolRailItem(
+                    icon = Icons.Default.Flip,
+                    label = "Flip H",
+                    tint = if (flipH) VaultAccent else VaultTextMuted,
+                    onClick = {
+                        keepChrome()
                         flipH = !flipH
                         haptic()
-                    }) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                Icons.Default.Flip,
-                                contentDescription = "Flip horizontal",
-                                tint = if (flipH) VaultAccent else VaultTextMuted,
-                                modifier = Modifier.size(22.dp),
-                            )
-                            Text("Flip H", color = Color.White, fontSize = 10.sp)
-                        }
-                    }
-                    IconButton(onClick = {
+                    },
+                )
+                ImageToolRailItem(
+                    icon = Icons.Default.SwapVert,
+                    label = "Flip V",
+                    tint = if (flipV) VaultAccent else VaultTextMuted,
+                    onClick = {
+                        keepChrome()
                         flipV = !flipV
                         haptic()
-                    }) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                Icons.Default.SwapVert,
-                                contentDescription = "Flip vertical",
-                                tint = if (flipV) VaultAccent else VaultTextMuted,
-                                modifier = Modifier.size(22.dp),
-                            )
-                            Text("Flip V", color = Color.White, fontSize = 10.sp)
-                        }
-                    }
-                    IconButton(onClick = {
+                    },
+                )
+                ImageToolRailItem(
+                    icon = Icons.Default.AspectRatio,
+                    label = fitMode.label,
+                    tint = VaultAccent,
+                    onClick = {
+                        keepChrome()
                         fitMode = when (fitMode) {
                             ImageFitMode.FIT -> ImageFitMode.FILL
                             ImageFitMode.FILL -> ImageFitMode.WIDTH
@@ -616,74 +684,46 @@ fun ImageViewer(
                         scale = 1f
                         offset = Offset.Zero
                         haptic()
-                    }) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                Icons.Default.AspectRatio,
-                                contentDescription = "Fit mode",
-                                tint = VaultAccent,
-                                modifier = Modifier.size(22.dp),
-                            )
-                            Text(fitMode.label, color = Color.White, fontSize = 10.sp)
-                        }
-                    }
-                    IconButton(onClick = {
+                    },
+                )
+                ImageToolRailItem(
+                    icon = Icons.Default.RestartAlt,
+                    label = "Reset",
+                    tint = VaultTextMuted,
+                    onClick = {
+                        keepChrome()
                         resetTransform(keepFit = false)
                         haptic()
-                    }) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                Icons.Default.RestartAlt,
-                                contentDescription = "Reset",
-                                tint = VaultTextMuted,
-                                modifier = Modifier.size(22.dp),
-                            )
-                            Text("Reset", color = Color.White, fontSize = 10.sp)
-                        }
-                    }
-                }
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(top = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    IconButton(onClick = {
+                    },
+                )
+                ImageToolRailItem(
+                    icon = if (slideshowPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    label = if (slideshowPlaying) "Pause" else "Slide",
+                    tint = if (slideshowPlaying) VaultAccent else VaultTextMuted,
+                    onClick = {
+                        keepChrome()
                         onSlideshowPlayingChange(!slideshowPlaying)
                         haptic()
-                    }) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                if (slideshowPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                contentDescription = if (slideshowPlaying) "Pause slideshow" else "Play slideshow",
-                                tint = if (slideshowPlaying) VaultAccent else VaultTextMuted,
-                                modifier = Modifier.size(22.dp),
-                            )
-                            Text(
-                                if (slideshowPlaying) "Pause" else "Slide",
-                                color = Color.White,
-                                fontSize = 10.sp,
-                            )
-                        }
-                    }
-                    IconButton(onClick = {
+                    },
+                )
+                ImageToolRailItem(
+                    icon = Icons.Default.Timer,
+                    label = interval.label,
+                    tint = VaultAccent,
+                    onClick = {
+                        keepChrome()
                         val next = interval.next()
                         onSlideshowIntervalMsChange(next.ms)
                         haptic()
-                    }) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                Icons.Default.Timer,
-                                contentDescription = "Slideshow interval",
-                                tint = VaultAccent,
-                                modifier = Modifier.size(22.dp),
-                            )
-                            Text(interval.label, color = Color.White, fontSize = 10.sp)
-                        }
-                    }
-
-                    IconButton(onClick = {
+                    },
+                )
+                ImageToolRailItem(
+                    icon = Icons.Default.Crop,
+                    label = "Crop",
+                    tint = if (onCropConfirm != null) VaultAccent else VaultTextMuted,
+                    enabled = onCropConfirm != null,
+                    onClick = {
+                        keepChrome()
                         if (ImageCrop.isGifMime(mimeType) || gifMovie != null) {
                             Toast.makeText(
                                 view.context,
@@ -698,66 +738,92 @@ fun ImageViewer(
                             cropping = true
                             haptic()
                         }
-                    }, enabled = onCropConfirm != null) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                Icons.Default.Crop,
-                                contentDescription = "Crop",
-                                tint = if (onCropConfirm != null) VaultAccent else VaultTextMuted,
-                                modifier = Modifier.size(22.dp),
-                            )
-                            Text("Crop", color = Color.White, fontSize = 10.sp)
-                        }
-                    }
-                }
+                    },
+                )
             }
         }
-
-        if (cropping && bitmap != null) {
-            ImageCropOverlay(
-                norm = cropNorm,
-                onNormChange = { cropNorm = it },
-                busy = cropBusy,
-                onCancel = {
-                    if (!cropBusy) cropping = false
-                },
-                onConfirm = {
-                    val confirm = onCropConfirm ?: return@ImageCropOverlay
-                    if (cropBusy) return@ImageCropOverlay
-                    cropBusy = true
-                    scope.launch {
-                        val n = ImageCrop.clampNormRect(
-                            cropNorm.left, cropNorm.top, cropNorm.right, cropNorm.bottom,
-                        )
-                        val result = try {
-                            confirm(n.left, n.top, n.right, n.bottom)
-                        } catch (e: Exception) {
-                            Result.failure(e)
-                        }
-                        cropBusy = false
-                        result.fold(
-                            onSuccess = {
-                                cropping = false
-                                resetTransform(keepFit = false)
-                                reloadEpoch++
-                                haptic()
-                                Toast.makeText(view.context, "Cropped", Toast.LENGTH_SHORT).show()
-                            },
-                            onFailure = { e ->
-                                Log.e("VaultImage", "crop failed", e)
-                                Toast.makeText(
-                                    view.context,
-                                    e.message ?: "Crop failed",
-                                    Toast.LENGTH_SHORT,
-                                ).show()
-                            },
-                        )
-                    }
-                },
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
     }
+}
+
+@Composable
+private fun ImageToolRailItem(
+    icon: ImageVector,
+    label: String,
+    tint: Color,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+) {
+    Column(
+        modifier = Modifier
+            .widthIn(min = 56.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(
+            icon,
+            contentDescription = label,
+            tint = if (enabled) tint else VaultTextMuted.copy(alpha = 0.4f),
+            modifier = Modifier.size(22.dp),
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            label,
+            color = if (enabled) Color.White else Color.White.copy(alpha = 0.4f),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+        )
+    }
+}
+
+/**
+ * Draw animated GIF via [Movie] on a dedicated View so Compose does not
+ * recompose the whole viewer every frame (frameEpoch thrash).
+ */
+@Composable
+private fun GifMovieAndroidView(
+    movie: Movie,
+    contentDescription: String,
+    modifier: Modifier = Modifier,
+) {
+    AndroidView(
+        factory = { ctx ->
+            object : View(ctx) {
+                private val frameBmp = Bitmap.createBitmap(
+                    movie.width().coerceAtLeast(1),
+                    movie.height().coerceAtLeast(1),
+                    Bitmap.Config.ARGB_8888,
+                )
+                private val frameCanvas = Canvas(frameBmp)
+                private val startMs = SystemClock.uptimeMillis()
+                private val paint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG)
+                private val dest = android.graphics.Rect()
+
+                init {
+                    contentDescription.let { this.contentDescription = it }
+                }
+
+                override fun onDraw(canvas: android.graphics.Canvas) {
+                    val dur = movie.duration().coerceAtLeast(1)
+                    val t = ((SystemClock.uptimeMillis() - startMs) % dur).toInt()
+                    movie.setTime(t)
+                    frameBmp.eraseColor(android.graphics.Color.TRANSPARENT)
+                    movie.draw(frameCanvas, 0f, 0f)
+                    dest.set(0, 0, width, height)
+                    canvas.drawBitmap(frameBmp, null, dest, paint)
+                    postInvalidateOnAnimation()
+                }
+
+                override fun onDetachedFromWindow() {
+                    super.onDetachedFromWindow()
+                    if (!frameBmp.isRecycled) frameBmp.recycle()
+                }
+            }
+        },
+        modifier = modifier,
+    )
 }
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {

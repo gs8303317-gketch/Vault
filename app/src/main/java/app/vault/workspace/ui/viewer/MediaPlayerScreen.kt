@@ -240,8 +240,15 @@ fun MediaPlayerScreen(
     DisposableEffect(Unit) {
         onDispose {
             onPlaybackActive(false)
-            playback?.release()
+            val session = playback
             playback = null
+            try {
+                session?.player?.playWhenReady = false
+                session?.player?.pause()
+                session?.player?.stop()
+            } catch (_: Exception) {
+            }
+            session?.release()
         }
     }
 
@@ -673,6 +680,11 @@ private fun PremiumPlayerOverlay(
                     pv.keepScreenOn = true
                     pv.useController = false
                     pv.resizeMode = fitMode.resizeMode
+                },
+                onRelease = { pv ->
+                    // Detach before ExoPlayer.release() to avoid surface/teardown jank.
+                    pv.player = null
+                    pv.keepScreenOn = false
                 },
                 modifier = Modifier.fillMaxSize(),
             )

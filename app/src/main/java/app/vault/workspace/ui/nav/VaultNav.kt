@@ -769,6 +769,7 @@ fun VaultNav(
                     repository = repository,
                     onBack = {
                         imageSlideshowPlaying = false
+                        autoLock.setPlaybackActive(false)
                         nav.popBackStack()
                     },
                     onRequestExport = { vaultItem ->
@@ -793,7 +794,11 @@ fun VaultNav(
                         moveItemIds = listOf(vaultItem.id)
                     },
                     onPlaybackActive = { active -> autoLock.setPlaybackActive(active) },
-                    onPlayerCreated = { p -> activePlayers = activePlayers + p },
+                    onPlayerCreated = { p ->
+                        // One live player: release any prior session (prev/next / reopen).
+                        activePlayers.forEach { old -> if (old !== p) old.release() }
+                        activePlayers = listOf(p)
+                    },
                     onPreviousMedia = prevMedia?.let { prev ->
                         {
                             nav.navigate(Routes.viewer(prev.id)) {

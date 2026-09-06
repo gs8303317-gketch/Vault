@@ -1,6 +1,14 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.4.16** — Phase 3 Image Viewer (in-vault crop, EXIF strip on JPEG export).
+Offline encrypted personal workspace for Android. **v0.4.17** — Image Viewer UX polish (tool rail, chrome keep-alive, crop, perf, video Back).
+
+## What this release adds (v0.4.17 / versionCode 34)
+
+- **Tool rail labels**: replaced clipped `IconButton` labels (e.g. Rotate→“Rotat”) with a premium horizontal-scroll rail; full labels + `contentDescription`.
+- **Chrome auto-hide**: tool taps (rotate/flip/fit/slideshow/crop) bump a keep-alive counter so the 3.5s auto-hide timer resets; only idle or tap-on-image hides chrome.
+- **Crop E2E**: fixed stale-norm drag (`rememberUpdatedState`), letterbox-aware crop coords, confirm → `cropAndReplaceImage` / same DEK+id → reload; GIF skip+toast unchanged.
+- **Perf**: image decode on IO (not main); GIF `Movie` draws via `AndroidView` (no per-frame Compose thrash). Encryption / `EncryptedDataSource` unchanged; no durable plaintext.
+- **Video Back**: pause + restore system bars before pop; detach `PlayerView` before `ExoPlayer.release`; single live `activePlayers` entry. No seek-prepare/PiP revival.
 
 ## What this release adds (v0.4.16 / versionCode 33)
 

@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,8 +39,9 @@ import app.vault.workspace.ui.theme.VaultAccent
 import kotlin.math.hypot
 
 /**
- * Simple in-viewer crop UI: dimmed outside, draggable rect, corner handles.
- * [norm] is left/top/right/bottom in 0..1 relative to the displayed image box.
+ * In-viewer crop UI: dimmed outside, draggable rect, corner handles.
+ * [norm] is left/top/right/bottom in 0..1 relative to the **displayed image**.
+ * [imageRectInOverlay] is the image's pixel rect inside this overlay (letterbox-aware).
  */
 @Composable
 fun ImageCropOverlay(
@@ -49,7 +51,11 @@ fun ImageCropOverlay(
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
+    imageRectInOverlay: Rect? = null,
 ) {
+    val latestNorm by rememberUpdatedState(norm)
+    val latestImageRect by rememberUpdatedState(imageRectInOverlay)
+
     Box(modifier.fillMaxSize()) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val w = constraints.maxWidth.toFloat().coerceAtLeast(1f)
@@ -65,7 +71,8 @@ fun ImageCropOverlay(
                         if (busy) return@pointerInput
                         detectDragGestures(
                             onDragStart = { start ->
-                                val rect = normToPx(norm, w, h)
+                                val img = resolveImageRect(latestImageRect, w, h)
+                                val rect = normToPx(latestNorm, img)
                                 dragMode = hitTest(start, rect, handlePx)
                             },
                             onDragEnd = { dragMode = null },
@@ -73,34 +80,45 @@ fun ImageCropOverlay(
                             onDrag = { change, amount ->
                                 change.consume()
                                 val mode = dragMode ?: return@detectDragGestures
-                                val dx = amount.x / w
-                                val dy = amount.y / h
+                                val img = resolveImageRect(latestImageRect, w, h)
+                                val dx = amount.x / img.width.coerceAtLeast(1f)
+                                val dy = amount.y / img.height.coerceAtLeast(1f)
+                                val n = latestNorm
                                 val next = when (mode) {
-                                    DragMode.MOVE -> ImageCrop.moveNormRect(norm, dx, dy)
+                                    DragMode.MOVE -> ImageCrop.moveNormRect(n, dx, dy)
                                     DragMode.TOP_LEFT ->
-                                        ImageCrop.resizeFromCorner(norm, ImageCrop.Corner.TOP_LEFT, dx, dy)
+                                        ImageCrop.resizeFromCorner(n, ImageCrop.Corner.TOP_LEFT, dx, dy)
                                     DragMode.TOP_RIGHT ->
-                                        ImageCrop.resizeFromCorner(norm, ImageCrop.Corner.TOP_RIGHT, dx, dy)
+                                        ImageCrop.resizeFromCorner(n, ImageCrop.Corner.TOP_RIGHT, dx, dy)
                                     DragMode.BOTTOM_LEFT ->
-                                        ImageCrop.resizeFromCorner(norm, ImageCrop.Corner.BOTTOM_LEFT, dx, dy)
+                                        ImageCrop.resizeFromCorner(n, ImageCrop.Corner.BOTTOM_LEFT, dx, dy)
                                     DragMode.BOTTOM_RIGHT ->
-                                        ImageCrop.resizeFromCorner(norm, ImageCrop.Corner.BOTTOM_RIGHT, dx, dy)
+                                        ImageCrop.resizeFromCorner(n, ImageCrop.Corner.BOTTOM_RIGHT, dx, dy)
                                 }
                                 onNormChange(next)
                             },
                         )
                     },
             ) {
-                val rect = normToPx(norm, size.width, size.height)
-                // Dim outside crop
+                val img = resolveImageRect(imageRectInOverlay, size.width, size.height)
+                val rect = normToPx(norm, img)
                 val dim = Color.Black.copy(alpha = 0.55f)
-                drawRect(dim, Offset.Zero, Size(size.width, rect.top))
-                drawRect(dim, Offset(0f, rect.bottom), Size(size.width, size.height - rect.bottom))
-                drawRect(dim, Offset(0f, rect.top), Size(rect.left, rect.height))
+                // Dim outside the crop rect (full overlay coordinates)
+                drawRect(dim, Offset.Zero, Size(size.width, rect.top.coerceAtLeast(0f)))
+                drawRect(
+                    dim,
+                    Offset(0f, rect.bottom),
+                    Size(size.width, (size.height - rect.bottom).coerceAtLeast(0f)),
+                )
+                drawRect(
+                    dim,
+                    Offset(0f, rect.top),
+                    Size(rect.left.coerceAtLeast(0f), rect.height.coerceAtLeast(0f)),
+                )
                 drawRect(
                     dim,
                     Offset(rect.right, rect.top),
-                    Size(size.width - rect.right, rect.height),
+                    Size((size.width - rect.right).coerceAtLeast(0f), rect.height.coerceAtLeast(0f)),
                 )
                 // Crop border + rule of thirds
                 drawRect(
@@ -111,31 +129,11 @@ fun ImageCropOverlay(
                 )
                 val thirdW = rect.width / 3f
                 val thirdH = rect.height / 3f
-                drawLine(
-                    VaultAccent.copy(alpha = 0.5f),
-                    Offset(rect.left + thirdW, rect.top),
-                    Offset(rect.left + thirdW, rect.bottom),
-                    strokeWidth = 1.5f,
-                )
-                drawLine(
-                    VaultAccent.copy(alpha = 0.5f),
-                    Offset(rect.left + 2 * thirdW, rect.top),
-                    Offset(rect.left + 2 * thirdW, rect.bottom),
-                    strokeWidth = 1.5f,
-                )
-                drawLine(
-                    VaultAccent.copy(alpha = 0.5f),
-                    Offset(rect.left, rect.top + thirdH),
-                    Offset(rect.right, rect.top + thirdH),
-                    strokeWidth = 1.5f,
-                )
-                drawLine(
-                    VaultAccent.copy(alpha = 0.5f),
-                    Offset(rect.left, rect.top + 2 * thirdH),
-                    Offset(rect.right, rect.top + 2 * thirdH),
-                    strokeWidth = 1.5f,
-                )
-                // Corner handles
+                val grid = VaultAccent.copy(alpha = 0.5f)
+                drawLine(grid, Offset(rect.left + thirdW, rect.top), Offset(rect.left + thirdW, rect.bottom), 1.5f)
+                drawLine(grid, Offset(rect.left + 2 * thirdW, rect.top), Offset(rect.left + 2 * thirdW, rect.bottom), 1.5f)
+                drawLine(grid, Offset(rect.left, rect.top + thirdH), Offset(rect.right, rect.top + thirdH), 1.5f)
+                drawLine(grid, Offset(rect.left, rect.top + 2 * thirdH), Offset(rect.right, rect.top + 2 * thirdH), 1.5f)
                 val hs = handlePx * 0.35f
                 for (c in listOf(
                     Offset(rect.left, rect.top),
@@ -186,13 +184,27 @@ private enum class DragMode {
     MOVE, TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT
 }
 
-private fun normToPx(norm: ImageCrop.NormRect, w: Float, h: Float): Rect =
-    Rect(
-        left = norm.left * w,
-        top = norm.top * h,
-        right = norm.right * w,
-        bottom = norm.bottom * h,
+internal fun resolveImageRect(imageRect: Rect?, overlayW: Float, overlayH: Float): Rect {
+    if (imageRect != null && imageRect.width > 1f && imageRect.height > 1f) {
+        return Rect(
+            left = imageRect.left.coerceIn(0f, overlayW),
+            top = imageRect.top.coerceIn(0f, overlayH),
+            right = imageRect.right.coerceIn(0f, overlayW),
+            bottom = imageRect.bottom.coerceIn(0f, overlayH),
+        )
+    }
+    return Rect(0f, 0f, overlayW, overlayH)
+}
+
+private fun normToPx(norm: ImageCrop.NormRect, imageRect: Rect): Rect {
+    val n = ImageCrop.clampNormRect(norm.left, norm.top, norm.right, norm.bottom)
+    return Rect(
+        left = imageRect.left + n.left * imageRect.width,
+        top = imageRect.top + n.top * imageRect.height,
+        right = imageRect.left + n.right * imageRect.width,
+        bottom = imageRect.top + n.bottom * imageRect.height,
     )
+}
 
 private fun hitTest(pos: Offset, rect: Rect, handlePx: Float): DragMode {
     fun near(c: Offset) = hypot((pos.x - c.x).toDouble(), (pos.y - c.y).toDouble()) <= handlePx

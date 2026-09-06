@@ -1,5 +1,8 @@
 package app.vault.workspace.ui.viewer
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -42,6 +45,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -50,6 +54,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.compose.ui.platform.LocalContext
 import app.vault.workspace.media.DecryptingPlayback
 import app.vault.workspace.data.VaultCategory
 import app.vault.workspace.data.VaultItem
@@ -90,30 +98,67 @@ fun ViewerScreen(
     var showInfo by remember { mutableStateOf(false) }
     var showTrashConfirm by remember { mutableStateOf(false) }
     var chromeVisible by remember { mutableStateOf(true) }
+    var chromeBump by remember { mutableIntStateOf(0) }
     var videoPlaying by remember { mutableStateOf(false) }
     var playerLocked by remember { mutableStateOf(false) }
-
-    // Gesture-lock must also block system/gesture back (and top chrome is hidden while locked).
-    BackHandler(enabled = playerLocked) {
-        // no-op: stay in player until unlock
-    }
+    var localPlayer by remember { mutableStateOf<DecryptingPlayback?>(null) }
+    val view = LocalView.current
+    val context = LocalContext.current
 
     val immersive = item.category == VaultCategory.IMAGE ||
         item.category == VaultCategory.VIDEO
 
-    // Auto-hide chrome for images; video chrome follows MediaPlayer controls
-    LaunchedEffect(chromeVisible, videoPlaying, immersive, item.category) {
+    // Auto-hide chrome for images; tool-rail taps bump [chromeBump] to reset the timer.
+    // Video chrome follows MediaPlayer controls (not this timer).
+    LaunchedEffect(chromeVisible, chromeBump, immersive, item.category, item.id) {
         if (immersive &&
             item.category == VaultCategory.IMAGE &&
             chromeVisible
         ) {
-            delay(3000)
+            delay(3_500)
             chromeVisible = false
         }
     }
 
     fun toggleChrome() {
         chromeVisible = !chromeVisible
+        if (chromeVisible) chromeBump++
+    }
+
+    fun keepChromeVisible() {
+        chromeVisible = true
+        chromeBump++
+    }
+
+    fun exitViewer() {
+        // Pause + restore system bars before nav pop; DisposableEffect releases ExoPlayer.
+        val p = localPlayer
+        try {
+            p?.player?.playWhenReady = false
+            p?.player?.pause()
+        } catch (_: Exception) {
+        }
+        videoPlaying = false
+        onPlaybackActive(false)
+        // Restore status/nav bars before the pop transition (avoids immersive jank).
+        runCatching {
+            var ctx: Context? = context
+            var act: Activity? = null
+            while (ctx != null) {
+                if (ctx is Activity) { act = ctx; break }
+                ctx = (ctx as? ContextWrapper)?.baseContext
+            }
+            act?.let { activity ->
+                val controller = WindowCompat.getInsetsController(activity.window, view)
+                controller.show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+        onBack()
+    }
+
+    // Gesture-lock blocks back; otherwise release player then pop (smooth video Back).
+    BackHandler(enabled = playerLocked || immersive) {
+        if (!playerLocked) exitViewer()
     }
 
     if (immersive) {
@@ -141,6 +186,7 @@ fun ViewerScreen(
                             if (result.isSuccess) ThumbCache.remove(item.id)
                         }
                     },
+                    onControlsInteraction = { keepChromeVisible() },
                 )
                 VaultCategory.VIDEO -> MediaPlayerScreen(
                     vatFile = repository.blobFile(item.id),
@@ -153,7 +199,10 @@ fun ViewerScreen(
                         onPlaybackActive(active)
                         if (!active && !playerLocked) chromeVisible = true
                     },
-                    onPlayerCreated = onPlayerCreated,
+                    onPlayerCreated = { playback ->
+                        localPlayer = playback
+                        onPlayerCreated(playback)
+                    },
                     onControlsVisibilityChanged = { visible -> chromeVisible = visible },
                     onGesturesLockedChanged = { locked ->
                         playerLocked = locked
@@ -178,7 +227,7 @@ fun ViewerScreen(
                     item = item,
                     menuOpen = menuOpen,
                     onMenuOpenChange = { menuOpen = it },
-                    onBack = onBack,
+                    onBack = { exitViewer() },
                     onShowExport = { showExportConfirm = true },
                     onShowInfo = { showInfo = true },
                     onToggleFavorite = { onToggleFavorite(item) },
