@@ -217,7 +217,7 @@ class SessionManager(private val context: Context) {
     }
 
     fun wipeTmp() {
-        // Leftover v0.4.6/0.4.7 play-cache dirs (playback no longer writes these)
+        // playcache dir: legacy playcache_* + v0.4.9+ seek_*.mp4 remux outputs
         try {
             PlaybackPlaintextCache.wipeAll(context)
         } catch (_: Exception) {

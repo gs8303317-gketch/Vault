@@ -1,6 +1,14 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.4.8** — streaming decrypt for all media; CBR SeekMap fallback for unseekable WEB-DL; play-cache removed from playback path.
+Offline encrypted personal workspace for Android. **v0.4.9** — instant streaming play; background remux to seekable MP4 for unseekable WEB-DL; CBR SeekMap fallback removed (caused seek crash).
+
+## What this release adds (v0.4.9 / versionCode 26)
+
+- **CBR removed**: `SeekableFallbackExtractorsFactory` / invented `ConstantBitrateSeekMap` deleted. CBR SeekMap landed mid-cluster on WEB-DL and crashed the extractor/decoder (`onPlayerError` → “This media format can't play on this device.”). `PlayerFactory` uses plain `DefaultExtractorsFactory().setConstantBitrateSeekingEnabled(true)` only.
+- **Instant stream play**: audio + video still start immediately via `EncryptedDataSource` (DEK on IO, ExoPlayer on **main**).
+- **Real seek for unseekable WEB-DL**: after `STATE_READY`, if video `!isCurrentMediaItemSeekable`, background `SeekableRemuxCache` remuxes via `VaultMediaDataSource` + `MediaExtractor`/`MediaMuxer` → `cacheDir/playcache/seek_<key>.mp4`. When ready, swap to `FileDataSource`/`Uri.fromFile` at current position (keep `playWhenReady`). Failures keep streaming (seek limited).
+- **UX**: scrub while remuxing queues `pendingSeekTarget` + optional “Preparing seek…”; apply on swap. `onPlayerError` during `seekSettling` / recent seek **recovers** (seekTo/prepare) instead of permanent fatal format error.
+- **Wipe**: remux files live under playcache; `PlaybackPlaintextCache.wipeAll` / `SessionManager.wipeTmp` still clears them on lock. Still **no PiP**.
 
 ## What this release adds (v0.4.8 / versionCode 25)
 
@@ -115,7 +123,7 @@ Offline encrypted personal workspace for Android. **v0.4.8** — streaming decry
 - 4-digit PIN setup / unlock / **change** (weak PINs rejected, progressive lockout on unlock)
 - VAULT1 chunked AES-256-GCM + PBKDF2-HMAC-SHA256 (210 000 iterations)
 - SAF multi-file import + **share-sheet import**; SAF export with confirmation
-- Image / Media3 decrypting playback (**audio + video**: EncryptedDataSource + CBR SeekMap fallback for unseekable WEB-DL; Media3 1.11) / **secure PDF** (proxy/memfd)
+- Image / Media3 decrypting playback (**audio + video**: EncryptedDataSource instant play; background remux to seekable MP4 for unseekable WEB-DL; Media3 1.11) / **secure PDF** (proxy/memfd)
 - Auto-lock on background; idle timer pauses during playback; SAF/share defer-lock
 - No `INTERNET` permission; `allowBackup=false`; screenshots allowed (no `FLAG_SECURE` until Phase 4)
 

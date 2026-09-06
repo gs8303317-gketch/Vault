@@ -4,11 +4,12 @@ import android.content.Context
 import android.net.Uri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.datasource.FileDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.extractor.DefaultExtractorsFactory
 import app.vault.workspace.crypto.KeyHierarchy
-import app.vault.workspace.crypto.VaultCrypto
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -19,9 +20,9 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Callers must create/use the player on the **main** thread (Media3 requirement).
  * Load the DEK on a background thread first; do not create ExoPlayer on IO.
  *
- * All media (audio + video) uses [EncryptedDataSource] / streaming decrypt — no
- * play-cache on the playback path. Unseekable SeekMaps (typical WEB-DL fMP4) are
- * replaced via [SeekableFallbackExtractorsFactory].
+ * All media (audio + video) starts with [EncryptedDataSource] / streaming decrypt.
+ * Unseekable WEB-DL video is remuxed in the background to a seekable MP4
+ * ([SeekableRemuxCache]) and swapped in without interrupting instant play.
  */
 class DecryptingPlayback(
     val player: ExoPlayer,
@@ -45,7 +46,7 @@ class DecryptingPlayback(
 object PlayerFactory {
     /**
      * **Main thread only.** Builds ExoPlayer with streaming [EncryptedDataSource]
-     * for both audio and video. Does not write play-cache files.
+     * for both audio and video. Does not write play-cache / remux files here.
      *
      * [mimeType] / [itemKey] are kept for call-site compatibility. Mime is **not**
      * set on [MediaItem] — extractors sniff the container (WEB-DL may be mkv labeled mp4).
@@ -67,10 +68,10 @@ object PlayerFactory {
             )
             .build()
 
-        val plaintextSize = VaultCrypto.readHeader(vatFile).plaintextSize
-        val extractorsFactory = SeekableFallbackExtractorsFactory(
-            knownContentLength = plaintextSize,
-        )
+        // CBR enabled for containers that support it natively — do NOT invent a
+        // SeekMap via ConstantBitrateSeekMap (that crashed WEB-DL mid-cluster seeks).
+        val extractorsFactory = DefaultExtractorsFactory()
+            .setConstantBitrateSeekingEnabled(true)
 
         val appCtx = context.applicationContext
         val dekCopy = dek.copyOf()
@@ -96,5 +97,32 @@ object PlayerFactory {
             player = player,
             extraCleanup = { KeyHierarchy.wipe(dekCopy) },
         )
+    }
+
+    /**
+     * **Main thread only.** Swap an existing player to a remuxed seekable MP4
+     * (or any real filesystem file) at [positionMs], keeping [playWhenReady].
+     */
+    fun swapToFileSource(
+        player: ExoPlayer,
+        file: File,
+        positionMs: Long,
+        playWhenReady: Boolean,
+    ) {
+        val extractorsFactory = DefaultExtractorsFactory()
+            .setConstantBitrateSeekingEnabled(true)
+        val factory = FileDataSource.Factory()
+        val mediaSource = ProgressiveMediaSource.Factory(factory, extractorsFactory)
+            .createMediaSource(
+                MediaItem.Builder()
+                    .setUri(Uri.fromFile(file))
+                    .build(),
+            )
+        val keepPlaying = playWhenReady
+        player.playWhenReady = false
+        player.setMediaSource(mediaSource)
+        player.seekTo(positionMs.coerceAtLeast(0L))
+        player.prepare()
+        player.playWhenReady = keepPlaying
     }
 }

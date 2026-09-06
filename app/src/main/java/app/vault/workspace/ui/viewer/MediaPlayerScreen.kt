@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.media.AudioManager
+import android.os.SystemClock
 import android.util.Log
 import android.view.HapticFeedbackConstants
 import android.view.ViewGroup
@@ -72,6 +73,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -99,6 +101,7 @@ import app.vault.workspace.media.applyTrackOverride
 import app.vault.workspace.media.collectSelectableTracks
 import app.vault.workspace.media.DecryptingPlayback
 import app.vault.workspace.media.PlayerFactory
+import app.vault.workspace.media.SeekableRemuxCache
 import app.vault.workspace.ui.theme.VaultAccent
 import app.vault.workspace.ui.theme.VaultBg
 import app.vault.workspace.ui.theme.VaultOnAccent
@@ -106,8 +109,10 @@ import app.vault.workspace.ui.theme.VaultSurface
 import app.vault.workspace.ui.theme.VaultText
 import app.vault.workspace.ui.theme.VaultTextMuted
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
@@ -163,12 +168,38 @@ fun MediaPlayerScreen(
     onNext: (() -> Unit)? = null,
 ) {
     val isAudio = mimeType.startsWith("audio/", ignoreCase = true)
+    val isVideo = mimeType.startsWith("video/", ignoreCase = true)
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var playback by remember { mutableStateOf<DecryptingPlayback?>(null) }
     val player = playback?.player
     var error by remember { mutableStateOf<String?>(null) }
+    /** Background remux to seekable MP4 in progress (video + unseekable stream). */
+    var remuxPreparing by remember { mutableStateOf(false) }
+    var remuxApplied by remember { mutableStateOf(false) }
+    /** Shared with overlay so onPlayerError can recover mid-seek crashes. */
+    var seekSettlingShared by remember { mutableStateOf(false) }
+    var lastSeekTargetMs by remember { mutableLongStateOf(0L) }
+    var recentSeekAtElapsedMs by remember { mutableLongStateOf(0L) }
+    var remuxPendingSeekMs by remember { mutableLongStateOf(-1L) }
+    var remuxJob by remember { mutableStateOf<Job?>(null) }
+
+    fun markSeekAttempt(targetMs: Long) {
+        lastSeekTargetMs = targetMs.coerceAtLeast(0L)
+        recentSeekAtElapsedMs = SystemClock.elapsedRealtime()
+        seekSettlingShared = true
+    }
 
     LaunchedEffect(vatFile, itemId, mimeType) {
+        remuxJob?.cancel()
+        remuxJob = null
+        remuxPreparing = false
+        remuxApplied = false
+        remuxPendingSeekMs = -1L
+        seekSettlingShared = false
+        error = null
+        playback?.release()
+        playback = null
         try {
             // Load DEK on IO; ExoPlayer must be created on main (Media3 thread check).
             val dek = withContext(Dispatchers.IO) { loadDek() }
@@ -195,7 +226,75 @@ fun MediaPlayerScreen(
                         "Playback error code=${e.errorCode} message=${e.message}",
                         e,
                     )
+                    val recentSeek =
+                        seekSettlingShared ||
+                            (SystemClock.elapsedRealtime() - recentSeekAtElapsedMs) < 4_000L
+                    if (recentSeek) {
+                        // CBR/mid-cluster and similar seek failures: recover, do not black out UI.
+                        try {
+                            val recoverTo = lastSeekTargetMs.coerceAtLeast(0L)
+                            p.seekTo(recoverTo)
+                            p.prepare()
+                            p.playWhenReady = true
+                        } catch (recover: Exception) {
+                            Log.e("VaultPlayer", "Seek error recovery failed", recover)
+                        }
+                        return
+                    }
                     error = "This media format can't play on this device."
+                }
+
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (playbackState != Player.STATE_READY) return
+                    if (!isVideo || remuxApplied || remuxPreparing) return
+                    if (p.isCurrentMediaItemSeekable) return
+                    val key = itemId?.takeIf { it.isNotBlank() } ?: return
+                    remuxPreparing = true
+                    remuxJob = scope.launch {
+                        val remuxFile = try {
+                            val remuxDek = withContext(Dispatchers.IO) { loadDek() }
+                            try {
+                                SeekableRemuxCache.getOrRemux(
+                                    context = context.applicationContext,
+                                    itemKey = key,
+                                    vatFile = vatFile,
+                                    dek = remuxDek,
+                                    mimeType = mimeType,
+                                )
+                            } finally {
+                                KeyHierarchy.wipe(remuxDek)
+                            }
+                        } catch (e: Exception) {
+                            Log.e("VaultPlayer", "Remux job failed: ${e.message}", e)
+                            null
+                        }
+                        if (remuxFile == null || !remuxFile.exists() || remuxFile.length() <= 0L) {
+                            remuxPreparing = false
+                            return@launch
+                        }
+                        // Swap on main at current position; apply any pending seek.
+                        val cur = p.currentPosition.coerceAtLeast(0L)
+                        val pending = remuxPendingSeekMs
+                        val target = if (pending >= 0L) pending else cur
+                        val keep = p.playWhenReady
+                        try {
+                            PlayerFactory.swapToFileSource(
+                                player = p,
+                                file = remuxFile,
+                                positionMs = target,
+                                playWhenReady = keep,
+                            )
+                            remuxApplied = true
+                            remuxPendingSeekMs = -1L
+                            markSeekAttempt(target)
+                            seekSettlingShared = true
+                            Log.i("VaultPlayer", "Swapped to remux seekable MP4 at ${target}ms")
+                        } catch (e: Exception) {
+                            Log.e("VaultPlayer", "Remux swap failed: ${e.message}", e)
+                        } finally {
+                            remuxPreparing = false
+                        }
+                    }
                 }
             })
             p.playWhenReady = true
@@ -208,6 +307,8 @@ fun MediaPlayerScreen(
 
     DisposableEffect(Unit) {
         onDispose {
+            remuxJob?.cancel()
+            remuxJob = null
             onPlaybackActive(false)
             playback?.release()
             playback = null
@@ -229,6 +330,12 @@ fun MediaPlayerScreen(
                     isAudio = isAudio,
                     title = title,
                     itemId = itemId,
+                    remuxPreparing = remuxPreparing,
+                    remuxApplied = remuxApplied,
+                    onSeekSettlingChanged = { settling -> seekSettlingShared = settling },
+                    onSeekAttempt = { target -> markSeekAttempt(target) },
+                    remuxPendingSeekMs = remuxPendingSeekMs,
+                    onRemuxPendingSeek = { target -> remuxPendingSeekMs = target },
                     onControlsVisibilityChanged = onControlsVisibilityChanged,
                     onGesturesLockedChanged = onGesturesLockedChanged,
                     onPrevious = onPrevious,
@@ -245,6 +352,12 @@ private fun PremiumPlayerOverlay(
     isAudio: Boolean,
     title: String?,
     itemId: String?,
+    remuxPreparing: Boolean,
+    remuxApplied: Boolean,
+    onSeekSettlingChanged: (Boolean) -> Unit,
+    onSeekAttempt: (Long) -> Unit,
+    remuxPendingSeekMs: Long,
+    onRemuxPendingSeek: (Long) -> Unit,
     onControlsVisibilityChanged: (Boolean) -> Unit,
     onGesturesLockedChanged: (Boolean) -> Unit,
     onPrevious: (() -> Unit)?,
@@ -298,6 +411,9 @@ private fun PremiumPlayerOverlay(
     var scrubPosition by remember { mutableFloatStateOf(0f) }
     /** True while ExoPlayer is settling after a user seek — ignore transient position 0. */
     var seekSettling by remember { mutableStateOf(false) }
+    LaunchedEffect(seekSettling) {
+        onSeekSettlingChanged(seekSettling)
+    }
 
     var volumeOverlay by remember { mutableStateOf<Int?>(null) }
     var brightnessOverlay by remember { mutableStateOf<Int?>(null) }
@@ -386,6 +502,7 @@ private fun PremiumPlayerOverlay(
                 if (pos >= b) {
                     seekSettling = true
                     positionMs = a
+                    onSeekAttempt(a)
                     player.seekTo(a)
                 }
             }
@@ -404,6 +521,23 @@ private fun PremiumPlayerOverlay(
         }
     }
 
+    // When remux finishes after a queued scrub, ensure UI settling clears on READY.
+    LaunchedEffect(remuxApplied, remuxPendingSeekMs) {
+        if (remuxApplied && remuxPendingSeekMs >= 0L) {
+            val t = remuxPendingSeekMs
+            positionMs = t
+            seekSettling = true
+            onSeekAttempt(t)
+            // Swap path already seekTo'd; if still pending (race), apply now.
+            if (!player.isCurrentMediaItemSeekable) {
+                // still streaming — leave queued
+            } else {
+                player.seekTo(t)
+                onRemuxPendingSeek(-1L)
+            }
+        }
+    }
+
     // Resume once duration is known (once). Mark settling so poller won't snap to 0.
     LaunchedEffect(durationMs, itemId) {
         if (didResume || itemId == null || durationMs <= 0L) return@LaunchedEffect
@@ -413,6 +547,7 @@ private fun PremiumPlayerOverlay(
         if (resumeAt > 0L) {
             seekSettling = true
             positionMs = resumeAt
+            onSeekAttempt(resumeAt)
             player.seekTo(resumeAt)
         }
     }
@@ -561,6 +696,13 @@ private fun PremiumPlayerOverlay(
         seekSettling = true
         scrubbing = false
         positionMs = target
+        onSeekAttempt(target)
+        // While remux is still building a seekable file, queue the seek (streaming map
+        // may be unseekable / crash on mid-cluster CBR land). Scrub UI already updated.
+        if (remuxPreparing && !remuxApplied && !player.isCurrentMediaItemSeekable) {
+            onRemuxPendingSeek(target)
+            return
+        }
         player.seekTo(target)
     }
 
@@ -854,13 +996,21 @@ private fun PremiumPlayerOverlay(
             }
         }
         AnimatedVisibility(
-            visible = seekOverlayMs != null && !speedBoostActive,
+            visible = seekOverlayMs != null && !speedBoostActive && remuxPendingSeekMs < 0L,
             enter = fadeIn() + scaleIn(initialScale = 0.9f),
             exit = fadeOut() + scaleOut(targetScale = 0.92f),
             modifier = Modifier.align(Alignment.Center),
         ) {
             val sign = if (lastSeekDelta >= 0) "+" else "-"
             OverlayChip(text = "$sign${formatPlayerTime(abs(lastSeekDelta))}")
+        }
+        AnimatedVisibility(
+            visible = remuxPreparing && remuxPendingSeekMs >= 0L,
+            enter = fadeIn() + scaleIn(initialScale = 0.9f),
+            exit = fadeOut() + scaleOut(targetScale = 0.92f),
+            modifier = Modifier.align(Alignment.Center),
+        ) {
+            OverlayChip(text = "Preparing seek…")
         }
         AnimatedVisibility(
             visible = speedBoostActive,
