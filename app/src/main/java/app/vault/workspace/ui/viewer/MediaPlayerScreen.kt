@@ -114,6 +114,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import kotlin.math.abs
@@ -182,6 +185,10 @@ fun MediaPlayerScreen(
     var lastSeekTargetMs by remember { mutableLongStateOf(0L) }
     var recentSeekAtElapsedMs by remember { mutableLongStateOf(0L) }
     var remuxPendingSeekMs by remember { mutableLongStateOf(-1L) }
+    /** 0..100 while remuxing; -1 when unknown/idle. */
+    var remuxProgressPct by remember { mutableIntStateOf(-1) }
+    /** Brief overlay after remux failure (unseekable WEB-DL). */
+    var seekUnavailableHint by remember { mutableStateOf(false) }
     var remuxJob by remember { mutableStateOf<Job?>(null) }
 
     fun markSeekAttempt(targetMs: Long) {
@@ -196,6 +203,8 @@ fun MediaPlayerScreen(
         remuxPreparing = false
         remuxApplied = false
         remuxPendingSeekMs = -1L
+        remuxProgressPct = -1
+        seekUnavailableHint = false
         seekSettlingShared = false
         error = null
         playback?.release()
@@ -250,26 +259,57 @@ fun MediaPlayerScreen(
                     if (p.isCurrentMediaItemSeekable) return
                     val key = itemId?.takeIf { it.isNotBlank() } ?: return
                     remuxPreparing = true
+                    remuxProgressPct = 0
+                    seekUnavailableHint = false
                     remuxJob = scope.launch {
-                        val remuxFile = try {
-                            val remuxDek = withContext(Dispatchers.IO) { loadDek() }
-                            try {
-                                SeekableRemuxCache.getOrRemux(
-                                    context = context.applicationContext,
-                                    itemKey = key,
-                                    vatFile = vatFile,
-                                    dek = remuxDek,
-                                    mimeType = mimeType,
-                                )
-                            } finally {
-                                KeyHierarchy.wipe(remuxDek)
+                        fun failRemux(reason: String, t: Throwable? = null) {
+                            if (t != null) {
+                                Log.e("VaultPlayer", reason, t)
+                            } else {
+                                Log.e("VaultPlayer", reason)
                             }
+                            remuxPreparing = false
+                            remuxProgressPct = -1
+                            remuxPendingSeekMs = -1L
+                            seekUnavailableHint = true
+                            // Do NOT seekTo on unseekable — that forces position 0.
+                        }
+
+                        val remuxFile = try {
+                            withTimeout(10 * 60 * 1000L) {
+                                val remuxDek = withContext(Dispatchers.IO) { loadDek() }
+                                try {
+                                    SeekableRemuxCache.getOrRemux(
+                                        context = context.applicationContext,
+                                        itemKey = key,
+                                        vatFile = vatFile,
+                                        dek = remuxDek,
+                                        mimeType = mimeType,
+                                        onProgress = { fraction ->
+                                            val pct = (fraction * 100f).toInt().coerceIn(0, 100)
+                                            // Compose state must update on Main.
+                                            scope.launch(Dispatchers.Main.immediate) {
+                                                remuxProgressPct = pct
+                                            }
+                                        },
+                                    )
+                                } finally {
+                                    KeyHierarchy.wipe(remuxDek)
+                                }
+                            }
+                        } catch (e: TimeoutCancellationException) {
+                            failRemux("Remux timed out after 10 minutes", e)
+                            return@launch
+                        } catch (e: CancellationException) {
+                            remuxPreparing = false
+                            remuxProgressPct = -1
+                            throw e
                         } catch (e: Exception) {
-                            Log.e("VaultPlayer", "Remux job failed: ${e.message}", e)
-                            null
+                            failRemux("Remux job failed: ${e.message}", e)
+                            return@launch
                         }
                         if (remuxFile == null || !remuxFile.exists() || remuxFile.length() <= 0L) {
-                            remuxPreparing = false
+                            failRemux("Remux returned null/empty for key=$key")
                             return@launch
                         }
                         // Swap on main at current position; apply any pending seek.
@@ -286,13 +326,16 @@ fun MediaPlayerScreen(
                             )
                             remuxApplied = true
                             remuxPendingSeekMs = -1L
+                            remuxProgressPct = 100
                             markSeekAttempt(target)
                             seekSettlingShared = true
                             Log.i("VaultPlayer", "Swapped to remux seekable MP4 at ${target}ms")
                         } catch (e: Exception) {
-                            Log.e("VaultPlayer", "Remux swap failed: ${e.message}", e)
+                            failRemux("Remux swap failed: ${e.message}", e)
+                            return@launch
                         } finally {
                             remuxPreparing = false
+                            remuxProgressPct = -1
                         }
                     }
                 }
@@ -332,6 +375,9 @@ fun MediaPlayerScreen(
                     itemId = itemId,
                     remuxPreparing = remuxPreparing,
                     remuxApplied = remuxApplied,
+                    remuxProgressPct = remuxProgressPct,
+                    seekUnavailableHint = seekUnavailableHint,
+                    onSeekUnavailableHintConsumed = { seekUnavailableHint = false },
                     onSeekSettlingChanged = { settling -> seekSettlingShared = settling },
                     onSeekAttempt = { target -> markSeekAttempt(target) },
                     remuxPendingSeekMs = remuxPendingSeekMs,
@@ -354,6 +400,9 @@ private fun PremiumPlayerOverlay(
     itemId: String?,
     remuxPreparing: Boolean,
     remuxApplied: Boolean,
+    remuxProgressPct: Int,
+    seekUnavailableHint: Boolean,
+    onSeekUnavailableHintConsumed: () -> Unit,
     onSeekSettlingChanged: (Boolean) -> Unit,
     onSeekAttempt: (Long) -> Unit,
     remuxPendingSeekMs: Long,
@@ -697,10 +746,15 @@ private fun PremiumPlayerOverlay(
         scrubbing = false
         positionMs = target
         onSeekAttempt(target)
-        // While remux is still building a seekable file, queue the seek (streaming map
-        // may be unseekable / crash on mid-cluster CBR land). Scrub UI already updated.
-        if (remuxPreparing && !remuxApplied && !player.isCurrentMediaItemSeekable) {
-            onRemuxPendingSeek(target)
+        // Unseekable WEB-DL: never seekTo (forces 0). Queue while remux prepares;
+        // after remux failure, scrub UI updates but playback stays put.
+        if (!remuxApplied && !player.isCurrentMediaItemSeekable) {
+            if (remuxPreparing) {
+                onRemuxPendingSeek(target)
+            } else {
+                onRemuxPendingSeek(-1L)
+                Log.w("VaultPlayer", "Seek skipped: media unseekable and remux not ready")
+            }
             return
         }
         player.seekTo(target)
@@ -1010,7 +1064,22 @@ private fun PremiumPlayerOverlay(
             exit = fadeOut() + scaleOut(targetScale = 0.92f),
             modifier = Modifier.align(Alignment.Center),
         ) {
-            OverlayChip(text = "Preparing seek…")
+            val pctLabel = if (remuxProgressPct in 0..100) " ${remuxProgressPct}%" else ""
+            OverlayChip(text = "Preparing seek…$pctLabel")
+        }
+        LaunchedEffect(seekUnavailableHint) {
+            if (seekUnavailableHint) {
+                delay(2_800)
+                onSeekUnavailableHintConsumed()
+            }
+        }
+        AnimatedVisibility(
+            visible = seekUnavailableHint,
+            enter = fadeIn() + scaleIn(initialScale = 0.9f),
+            exit = fadeOut() + scaleOut(targetScale = 0.92f),
+            modifier = Modifier.align(Alignment.Center),
+        ) {
+            OverlayChip(text = "Seek unavailable for this file")
         }
         AnimatedVisibility(
             visible = speedBoostActive,

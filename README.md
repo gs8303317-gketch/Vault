@@ -1,6 +1,13 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.4.9** — instant streaming play; background remux to seekable MP4 for unseekable WEB-DL; CBR SeekMap fallback removed (caused seek crash).
+Offline encrypted personal workspace for Android. **v0.4.10** — encryption already seekable (chunked AES-GCM + EncryptedDataSource); WEB-DL needs remux; remux is now decrypt-then-MediaExtractor(path) with progress (fixes stuck “Preparing seek…”).
+
+## What this release adds (v0.4.10 / versionCode 27)
+
+- **Root cause**: stuck “Preparing seek…” was **not** encryption. Vault already has chunked AES-GCM + random-access `EncryptedDataSource`. Failure was unseekable WEB-DL containers plus remux stuck/failing: `SeekableRemuxCache` used `MediaExtractor.setDataSource(VaultMediaDataSource)` which hangs on many OEMs for long WEB-DLs; selecting all tracks (subs/timed text) + 2MB sample cap could also throw → remux null → later `seekTo` on unseekable forced position 0.
+- **Reliable remux**: decrypt VAULT1 → `playcache/plain_<hash>.bin` via `VaultCrypto.decryptToStream`, then `MediaExtractor.setDataSource(path)` + `MediaMuxer` MPEG-4 → `seek_<hash>.mp4`. Delete plain temp in `finally`. Mux only `video/*` + `audio/*` (skip text/metadata; skip tracks that throw on `addTrack`). Sample buffer **16MB**. Progress callback (decrypt + mux phases).
+- **UX**: “Preparing seek… N%” while a seek is queued during remux; on remux null/timeout (10 min) clear preparing + pending, `Log.e`, brief “Seek unavailable for this file” — **do not** `seekTo` on unseekable. Success still `swapToFileSource` + apply pending seek. Compose progress updates on Main.
+- **Kept**: instant EncryptedDataSource streaming play (main-thread ExoPlayer); no CBR SeekMap; wipe playcache on lock; seek-error recovery without black-screen for recent seeks. Still **no PiP**.
 
 ## What this release adds (v0.4.9 / versionCode 26)
 

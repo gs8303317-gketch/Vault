@@ -12,9 +12,9 @@ import java.util.concurrent.ConcurrentHashMap
  * Session play-cache directory under `cacheDir/playcache`.
  *
  * Legacy full-plaintext decrypt (`playcache_*`) from v0.4.6–0.4.7 is unused on the
- * playback path. v0.4.9+ stores background remux outputs as `seek_*.mp4` here via
- * [SeekableRemuxCache]. [wipeAll] purges both on lock / cold start
- * ([app.vault.workspace.auth.SessionManager.wipeTmp]).
+ * playback path. v0.4.10 remux uses short-lived `plain_*.bin` decrypt temps plus
+ * `seek_*.mp4` outputs via [SeekableRemuxCache]. [wipeAll] purges all on lock /
+ * cold start ([app.vault.workspace.auth.SessionManager.wipeTmp]).
  */
 object PlaybackPlaintextCache {
     private const val DIR_NAME = "playcache"
