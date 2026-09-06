@@ -231,6 +231,7 @@ fun VaultNav(
                     nav.navigate(Routes.viewer(item.id))
                 },
                 onSettings = { nav.navigate(Routes.Settings) },
+                onLoadThumb = { id -> repository.loadThumbBitmap(id) },
             )
         }
         composable(Routes.Settings) {

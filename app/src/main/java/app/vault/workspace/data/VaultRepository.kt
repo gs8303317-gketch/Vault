@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
@@ -114,10 +115,17 @@ class VaultRepository(
 
                 val wrappedDek = KeyHierarchy.wrapDek(vmk, dek)
                 var hasThumb = false
-                if (mime.startsWith("image/")) {
-                    hasThumb = runCatching {
-                        createThumb(uri, id, dek, vmk)
-                    }.getOrDefault(false)
+                when {
+                    mime.startsWith("image/") -> {
+                        hasThumb = runCatching {
+                            createThumb(uri, id, dek)
+                        }.getOrDefault(false)
+                    }
+                    mime.startsWith("video/") -> {
+                        hasThumb = runCatching {
+                            createVideoThumb(uri, id, dek)
+                        }.getOrDefault(false)
+                    }
                 }
                 KeyHierarchy.wipe(dek)
 
@@ -148,14 +156,67 @@ class VaultRepository(
             }
         }
 
-    private fun createThumb(uri: Uri, id: String, dek: ByteArray, vmk: ByteArray): Boolean {
+    suspend fun loadThumbBitmap(id: String, maxSide: Int = 512): Bitmap? = withContext(Dispatchers.IO) {
+        try {
+            val entity = dao.getById(id) ?: return@withContext null
+            if (!entity.hasThumb) return@withContext null
+            val file = thumbFile(id)
+            if (!file.exists()) return@withContext null
+            val dek = KeyHierarchy.unwrapDek(session.requireVmk(), entity.dekWrap)
+            try {
+                val bytes = VaultCrypto.decryptToBytes(file, dek)
+                val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@withContext null
+                scaleToMaxSide(decoded, maxSide)
+            } finally {
+                KeyHierarchy.wipe(dek)
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun createThumb(uri: Uri, id: String, dek: ByteArray): Boolean {
         val bitmap = decodeSampled(uri, 512) ?: return false
+        return encryptThumbBitmap(bitmap, id, dek)
+    }
+
+    private fun createVideoThumb(uri: Uri, id: String, dek: ByteArray): Boolean {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(context, uri)
+            val frame = retriever.getFrameAtTime(
+                1_000_000L,
+                MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+            ) ?: retriever.frameAtTime ?: return false
+            val scaled = scaleToMaxSide(frame, 512)
+            encryptThumbBitmap(scaled, id, dek)
+        } catch (_: Exception) {
+            false
+        } finally {
+            runCatching { retriever.release() }
+        }
+    }
+
+    private fun encryptThumbBitmap(bitmap: Bitmap, id: String, dek: ByteArray): Boolean {
         val baos = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.JPEG, 75, baos)
-        bitmap.recycle()
-        val bytes = baos.toByteArray()
-        VaultCrypto.encryptBytes(bytes, dek, thumbFile(id), session.tmpDir())
+        val ok = bitmap.compress(Bitmap.CompressFormat.JPEG, 75, baos)
+        if (!bitmap.isRecycled) bitmap.recycle()
+        if (!ok) return false
+        VaultCrypto.encryptBytes(baos.toByteArray(), dek, thumbFile(id), session.tmpDir())
         return true
+    }
+
+    private fun scaleToMaxSide(bitmap: Bitmap, maxSide: Int): Bitmap {
+        val w = bitmap.width
+        val h = bitmap.height
+        val longest = maxOf(w, h)
+        if (longest <= maxSide || longest <= 0) return bitmap
+        val scale = maxSide.toFloat() / longest
+        val nw = (w * scale).toInt().coerceAtLeast(1)
+        val nh = (h * scale).toInt().coerceAtLeast(1)
+        val scaled = Bitmap.createScaledBitmap(bitmap, nw, nh, true)
+        if (scaled != bitmap) bitmap.recycle()
+        return scaled
     }
 
     private fun decodeSampled(uri: Uri, maxSide: Int): Bitmap? {
