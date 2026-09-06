@@ -1,10 +1,6 @@
 package app.vault.workspace.ui.viewer
 
 import android.app.Activity
-import android.app.PictureInPictureParams
-import android.content.pm.PackageManager
-import android.os.Build
-import android.util.Rational
 import android.content.Context
 import android.content.ContextWrapper
 import android.media.AudioManager
@@ -48,7 +44,6 @@ import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Headphones
-import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.BrightnessHigh
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Lock
@@ -534,16 +529,6 @@ private fun PremiumPlayerOverlay(
         brightnessOverlay = (v * 100).toInt()
     }
 
-    fun enterPip() {
-        if (isAudio) return
-        val act = activity ?: return
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        if (!act.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) return
-        val ratio = Rational(16, 9)
-        val params = PictureInPictureParams.Builder().setAspectRatio(ratio).build()
-        act.enterPictureInPictureMode(params)
-    }
-
     fun toggleLock() {
         gesturesLocked = !gesturesLocked
         speedMenuOpen = false
@@ -640,6 +625,7 @@ private fun PremiumPlayerOverlay(
                         var gestureSeekAccum = 0L
                         var seekBasePos = 0L
                         var pendingSeekTarget = -1L
+                        var lastLiveSeekMs = 0L
                         var gestureVol = volumeFraction
                         var gestureBright = brightness
                         var longPressArmed = !gesturesLocked
@@ -719,6 +705,12 @@ private fun PremiumPlayerOverlay(
                                             positionMs = target
                                             gestureSeekAccum = deltaMs
                                             seekOverlayMs = deltaMs
+                                            // Live seek (throttled) so scrub feels responsive
+                                            val now = System.currentTimeMillis()
+                                            if (now - lastLiveSeekMs >= 120L) {
+                                                lastLiveSeekMs = now
+                                                player.seekTo(target)
+                                            }
                                         }
                                     }
                                 }
@@ -862,6 +854,8 @@ private fun PremiumPlayerOverlay(
                         onValueChange = { v ->
                             scrubbing = true
                             scrubPosition = v
+                            positionMs = v.toLong()
+                            player.seekTo(v.toLong())
                             showControls()
                         },
                         onValueChangeFinished = {
@@ -1209,15 +1203,6 @@ private fun PremiumPlayerOverlay(
                                     },
                                 )
                             }
-                        }
-                    }
-
-                    if (!isAudio) {
-                        IconButton(onClick = {
-                            enterPip()
-                            showControls()
-                        }) {
-                            Icon(Icons.Default.PictureInPictureAlt, "PiP", tint = VaultTextMuted)
                         }
                     }
 

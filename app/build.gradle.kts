@@ -23,11 +23,11 @@ android {
         applicationId = "app.vault.workspace"
         minSdk = 26
         targetSdk = 35
-        versionCode = 17
-        versionName = "0.4.0"
+        versionCode = 18
+        versionName = "0.4.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "VERSION_NAME", "\"0.4.0\"")
-        buildConfigField("int", "VERSION_CODE", "17")
+        buildConfigField("String", "VERSION_NAME", "\"0.4.1\"")
+        buildConfigField("int", "VERSION_CODE", "18")
     }
 
     signingConfigs {
@@ -123,6 +123,7 @@ dependencies {
     implementation("androidx.media3:media3-ui:1.5.1")
     implementation("androidx.media3:media3-datasource:1.5.1")
     implementation("androidx.media3:media3-common:1.5.1")
+    implementation("androidx.media3:media3-extractor:1.5.1")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")

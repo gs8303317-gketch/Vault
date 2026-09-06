@@ -1,10 +1,16 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.4.0** — Phase 3 tracks/PiP, premium player rail, library view modes, A/B deselect fix.
+Offline encrypted personal workspace for Android. **v0.4.1** — seek reliability, smoother decrypt playback, PiP removed for privacy.
+
+## What this release adds (v0.4.1 / versionCode 18)
+
+- **Seek fix**: decrypting DataSource resets cleanly on every seek; chunk cache for nearby seeks; larger ExoPlayer buffers + CBR seeking fallback; custom `vaultenc:///` URI (no `file://` on `.vat`); live throttled scrub + seek-while-dragging on the slider.
+- **Smoothness**: shared plaintext chunk cache + bigger playback buffers so scrub/rebuffer feels less sticky.
+- **PiP removed**: Picture-in-Picture showed decoded frames in a system overlay (privacy risk even though on-disk `.vat` stayed encrypted). Button + manifest flag gone.
 
 ## What this release adds (v0.4.0 / versionCode 17)
 
-- **Phase 3 player**: embedded audio-track + subtitle menus, Picture-in-Picture, premium evenly-spaced tool rail.
+- **Phase 3 player**: embedded audio-track + subtitle menus, Picture-in-Picture (removed in 0.4.1), premium evenly-spaced tool rail.
 - **A/B markers**: tap again to deselect/clear; clearing B (or A) exits A–B loop.
 - **Library view modes**: Grid / Comfortable / List (alongside existing sort).
 
