@@ -2,6 +2,7 @@ package app.vault.workspace.auth
 
 import android.content.Context
 import app.vault.workspace.crypto.KeyHierarchy
+import app.vault.workspace.media.PlaybackPlaintextCache
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -216,11 +217,25 @@ class SessionManager(private val context: Context) {
     }
 
     fun wipeTmp() {
+        // Session video plaintext play-cache (cacheDir/playcache)
+        try {
+            PlaybackPlaintextCache.wipeAll(context)
+        } catch (_: Exception) {
+        }
         val dir = tmpDir()
         if (!dir.exists()) return
         // Belt-and-suspenders: purge any leftover plaintext PDF caches first
         dir.listFiles()?.forEach { f ->
             if (f.isFile && f.name.endsWith(".pdf", ignoreCase = true)) {
+                try {
+                    f.delete()
+                } catch (_: Exception) {
+                }
+            }
+        }
+        // Also purge any playcache_* leftovers under vault/tmp
+        dir.listFiles()?.forEach { f ->
+            if (f.isFile && f.name.startsWith("playcache_", ignoreCase = true)) {
                 try {
                     f.delete()
                 } catch (_: Exception) {

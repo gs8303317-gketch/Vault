@@ -92,6 +92,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import app.vault.workspace.crypto.KeyHierarchy
 import app.vault.workspace.media.PlaybackPositionStore
 import app.vault.workspace.media.SelectableTrack
 import app.vault.workspace.media.applyTrackOverride
@@ -167,10 +168,23 @@ fun MediaPlayerScreen(
     val player = playback?.player
     var error by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(vatFile) {
+    LaunchedEffect(vatFile, itemId, mimeType) {
         try {
-            val dek = withContext(Dispatchers.IO) { loadDek() }
-            val session = PlayerFactory.createDecryptingPlayer(context, vatFile, dek, mimeType)
+            // DEK unwrap + video decrypt-to-playcache both on IO (first open of big WEB-DL may take time).
+            val session = withContext(Dispatchers.IO) {
+                val dek = loadDek()
+                try {
+                    PlayerFactory.createDecryptingPlayer(
+                        context = context,
+                        vatFile = vatFile,
+                        dek = dek,
+                        mimeType = mimeType,
+                        itemKey = itemId,
+                    )
+                } finally {
+                    KeyHierarchy.wipe(dek)
+                }
+            }
             val p = session.player
             p.addListener(object : Player.Listener {
                 override fun onIsPlayingChanged(isPlaying: Boolean) {

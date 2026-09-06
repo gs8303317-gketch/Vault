@@ -1,6 +1,13 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.4.5** — research-backed seek (Media3 1.11 mfra + FileDescriptorDataSource proxy; no `/proc`).
+Offline encrypted personal workspace for Android. **v0.4.6** — video seek via session plaintext play-cache (wiped on lock); audio stays stream-decrypt.
+
+## What this release adds (v0.4.6 / versionCode 23)
+
+- **Video seek (guaranteed)**: decrypt once to a session plaintext play-cache file under `cacheDir/playcache`, then play with ExoPlayer `ProgressiveMediaSource` + `FileDataSource` / `Uri.fromFile` — real filesystem file → real SeekMap → seek works. Reused across opens in the same unlock session; wiped on vault lock / cold start (`SessionManager.wipeTmp` → `PlaybackPlaintextCache.wipeAll`).
+- **Audio unchanged**: still streaming `EncryptedDataSource` (seek already works).
+- **Removed** proxy `FileDescriptorDataSource` / ExclusiveFileDescriptor from the player path (failed for seek). PDF keeps `EncryptedSeekableOpener`.
+- Still **no PiP**.
 
 ## What this release adds (v0.4.5 / versionCode 22)
 
@@ -95,7 +102,7 @@ Offline encrypted personal workspace for Android. **v0.4.5** — research-backed
 - 4-digit PIN setup / unlock / **change** (weak PINs rejected, progressive lockout on unlock)
 - VAULT1 chunked AES-256-GCM + PBKDF2-HMAC-SHA256 (210 000 iterations)
 - SAF multi-file import + **share-sheet import**; SAF export with confirmation
-- Image / Media3 decrypting playback (**FileDescriptorDataSource** proxy FD or **EncryptedDataSource** fallback; Media3 1.11) / **secure PDF** (proxy/memfd)
+- Image / Media3 decrypting playback (**video**: session plaintext play-cache + FileDataSource; **audio**: EncryptedDataSource; Media3 1.11) / **secure PDF** (proxy/memfd)
 - Auto-lock on background; idle timer pauses during playback; SAF/share defer-lock
 - No `INTERNET` permission; `allowBackup=false`; screenshots allowed (no `FLAG_SECURE` until Phase 4)
 
