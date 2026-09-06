@@ -1,15 +1,18 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **Phase 1 power features (v0.3.0)** — folders + biometric unlock on top of the Phase 1 library UX.
+Offline encrypted personal workspace for Android. **v0.3.1** — crash fix for import FAB, folder back-nav, and thumbnail LRU cache on top of Phase 1 power features (folders + biometric unlock).
 
-## What this release adds
+## What this release adds (v0.3.1 / versionCode 8)
+
+- **Import crash fix**: `+` FAB now uses `GetMultipleContents()` with `"*/*"` only (OEM pickers often crash on `OpenMultipleDocuments` + long MIME arrays including `*/*`). Launch wrapped in try/catch; SAF defer-background-lock kept around the picker.
+- **Folder back navigation**: Inside a folder, toolbar shows **Back** (ArrowBack) and system back clears the folder filter instead of leaving the vault / popping to Unlock. Opening a folder from Folders lands on Library with the filter applied.
+- **Thumbnail LRU cache**: In-memory cache (~64 entries) avoids re-decrypting thumbs while scrolling; cleared on session lock. No Room schema change — still **Room DB version 3** (destructive migration N/A for this bump).
+
+## Also in v0.3.0 / versionCode 7
 
 - **PDF zoom pan**: clamped bounds + transformable gestures; pager swipe disabled while zoomed (no more drifting page)
-
-## Also in this release (v0.3.0 / versionCode 7)
-
-- **Folders**: encrypted folder names (NameCipher under VMK); create / open / delete; move items from viewer or multi-select; deleting a folder returns its items to the main library (not trash). Room DB **version 3** (+ `vault_folders` table, `folderId` on items). Still uses `fallbackToDestructiveMigration()` — **upgrading wipes the local Room DB** (re-import after upgrade on early builds).
-- **Biometric unlock**: optional BIOMETRIC_STRONG Keystore wrap of the VMK (`vault.bio`); Settings toggle; Unlock screen fingerprint / “Unlock with biometrics”; PIN remains the always-available fallback. Toggle hidden when no strong biometric hardware.
+- **Folders**: encrypted folder names (NameCipher under VMK); create / open / delete; move items from viewer or multi-select; deleting a folder returns its items to the main library (not trash). Room DB **version 3** (+ `vault_folders` table, `folderId` on items). Still uses `fallbackToDestructiveMigration()` — **upgrading from pre-v0.3.0 wipes the local Room DB** (re-import after upgrade on early builds). No additional wipe for 0.3.0 → 0.3.1.
+- **Biometric unlock**: optional BIOMETRIC_STRONG Keystore wrap of the VMK (`vault.bio`); Settings toggle (under Auto-lock when hardware available); Unlock screen fingerprint / “Unlock with biometrics”; PIN remains the always-available fallback. Toggle hidden when no strong biometric hardware.
 - Library top-bar **Folders** entry; Settings → Folders; import into the open folder when a folder filter is active.
 
 ### Also in 0.2.x
@@ -34,7 +37,7 @@ Nested folders UI polish, bulk export, tablet two-pane, import cancel/resume, im
 
 ## Limitations (honest)
 
-- **Destructive DB migration on upgrade to v0.3.0**: Room schema wipe via `fallbackToDestructiveMigration` — early-app OK; re-import after upgrade if you had data on v0.2.x
+- **Destructive DB migration on upgrade to v0.3.0**: Room schema wipe via `fallbackToDestructiveMigration` — early-app OK; re-import after upgrade if you had data on v0.2.x. **v0.3.1 keeps Room v3** — no schema change / no extra wipe for 0.3.0 → 0.3.1.
 - Biometric wrap is invalidated if biometrics are re-enrolled on the device (`setInvalidatedByBiometricEnrollment`); re-enable from Settings after PIN unlock
 - Rooted / unlocked session can read vault memory and files
 - Screenshots of unlocked screens work (intentional for testing in P0–P3)

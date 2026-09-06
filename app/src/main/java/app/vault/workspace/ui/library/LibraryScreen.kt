@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
@@ -201,7 +202,10 @@ fun LibraryScreen(
                     navigationIcon = {
                         if (onClearFolderFilter != null) {
                             IconButton(onClick = onClearFolderFilter) {
-                                Icon(Icons.Default.Close, contentDescription = "All items")
+                                Icon(
+                                    Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Back",
+                                )
                             }
                         }
                     },
@@ -456,9 +460,15 @@ private fun LibraryCard(
     onLongClick: () -> Unit,
     onToggleFavorite: () -> Unit,
 ) {
-    val thumb by produceState<Bitmap?>(initialValue = null, item.id, item.hasThumb) {
+    val thumb by produceState<Bitmap?>(
+        initialValue = if (item.hasThumb) ThumbCache.peek(item.id) else null,
+        item.id,
+        item.hasThumb,
+    ) {
         value = if (item.hasThumb) {
-            runCatching { onLoadThumb(item.id) }.getOrNull()
+            runCatching {
+                ThumbCache.get(item.id) { onLoadThumb(item.id) }
+            }.getOrNull()
         } else {
             null
         }

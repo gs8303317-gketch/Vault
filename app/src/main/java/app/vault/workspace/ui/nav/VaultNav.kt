@@ -1,6 +1,7 @@
 package app.vault.workspace.ui.nav
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.biometric.BiometricManager
@@ -21,6 +22,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import app.vault.workspace.auth.AutoLockController
@@ -34,6 +36,7 @@ import app.vault.workspace.import.ImportController
 import app.vault.workspace.ui.folders.FoldersScreen
 import app.vault.workspace.ui.folders.MoveToFolderDialog
 import app.vault.workspace.ui.library.LibraryScreen
+import app.vault.workspace.ui.library.ThumbCache
 import app.vault.workspace.ui.settings.SettingsScreen
 import app.vault.workspace.ui.setup.FirstRunScreen
 import app.vault.workspace.ui.setup.SetupPinScreen
@@ -53,20 +56,6 @@ object Routes {
     const val Viewer = "viewer/{id}"
     fun viewer(id: String) = "viewer/$id"
 }
-
-private val IMPORT_MIME_TYPES = arrayOf(
-    "image/*",
-    "video/*",
-    "audio/*",
-    "application/pdf",
-    "text/*",
-    "application/zip",
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.ms-excel",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "*/*",
-)
 
 @Composable
 fun VaultNav(
@@ -128,6 +117,7 @@ fun VaultNav(
             currentFolderName = null
             activePlayers.forEach { it.release() }
             activePlayers = emptyList()
+            ThumbCache.clear()
             autoLock.setPlaybackActive(false)
             autoLock.setDeferBackgroundLock(false)
             if (session.isSetupComplete) {
@@ -142,6 +132,7 @@ fun VaultNav(
         val listener: () -> Unit = {
             activePlayers.forEach { it.release() }
             activePlayers = emptyList()
+            ThumbCache.clear()
         }
         session.addLockListener(listener)
         onDispose { session.removeLockListener(listener) }
@@ -265,7 +256,7 @@ fun VaultNav(
     }
 
     val openDocLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenMultipleDocuments(),
+        ActivityResultContracts.GetMultipleContents(),
     ) { uris: List<Uri> ->
         autoLock.setDeferBackgroundLock(false)
         if (uris.isEmpty()) {
@@ -322,6 +313,13 @@ fun VaultNav(
                 onFailure = { "Export failed: ${it.message ?: "error"}" },
             )
         }
+    }
+
+    val navBackStackEntry by nav.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+    BackHandler(enabled = currentFolderId != null && currentRoute == Routes.Library) {
+        currentFolderId = null
+        currentFolderName = null
     }
 
     NavHost(navController = nav, startDestination = start) {
@@ -397,7 +395,12 @@ fun VaultNav(
                 onDismissStatus = { statusMessage = null },
                 onImport = {
                     autoLock.setDeferBackgroundLock(true)
-                    openDocLauncher.launch(IMPORT_MIME_TYPES)
+                    try {
+                        openDocLauncher.launch("*/*")
+                    } catch (e: Exception) {
+                        autoLock.setDeferBackgroundLock(false)
+                        statusMessage = "Could not open file picker: ${e.message ?: "error"}"
+                    }
                 },
                 onOpenItem = { item ->
                     autoLock.bumpIdle()
