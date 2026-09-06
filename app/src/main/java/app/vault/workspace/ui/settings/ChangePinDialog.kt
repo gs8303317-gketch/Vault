@@ -4,7 +4,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -17,7 +20,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import app.vault.workspace.auth.PinRules
+import app.vault.workspace.auth.LockRules
+import app.vault.workspace.auth.LockType
+import app.vault.workspace.ui.components.LockTypeChooser
+import app.vault.workspace.ui.components.PasswordLockField
+import app.vault.workspace.ui.components.PatternLock
 import app.vault.workspace.ui.components.PinDots
 import app.vault.workspace.ui.components.PinPad
 import app.vault.workspace.ui.theme.VaultAccent
@@ -25,116 +32,86 @@ import app.vault.workspace.ui.theme.VaultDanger
 import app.vault.workspace.ui.theme.VaultSurface
 import app.vault.workspace.ui.theme.VaultTextMuted
 
-private enum class ChangePinStep {
-    Current,
-    New,
-    Confirm,
+private enum class ChangeLockStep {
+    VerifyCurrent,
+    ChooseType,
+    EnterNew,
+    ConfirmNew,
 }
 
 /**
- * Multi-step PIN change: verify current → choose new → confirm.
- * Calls [onSubmit] with (current, new) when confirm matches.
+ * Change lock: verify current credential → pick new type → set + confirm.
+ * Calls [onSubmit] with (currentCredential, newType, newCredential).
  */
 @Composable
 fun ChangePinDialog(
+    currentLockType: LockType,
+    currentPinLength: Int,
     errorMessage: String?,
     busy: Boolean,
     onDismiss: () -> Unit,
-    onSubmit: (currentPin: String, newPin: String) -> Unit,
+    onSubmit: (current: String, newType: LockType, newCredential: String) -> Unit,
 ) {
-    var step by remember { mutableStateOf(ChangePinStep.Current) }
+    var step by remember { mutableStateOf(ChangeLockStep.VerifyCurrent) }
     var current by remember { mutableStateOf("") }
-    var newPin by remember { mutableStateOf("") }
+    var newType by remember { mutableStateOf<LockType?>(null) }
+    var newCred by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf("") }
     var localError by remember { mutableStateOf<String?>(null) }
 
-    val display = when (step) {
-        ChangePinStep.Current -> current
-        ChangePinStep.New -> newPin
-        ChangePinStep.Confirm -> confirm
-    }
+    val pinSlots = currentPinLength.coerceIn(LockRules.PIN_MIN, LockRules.PIN_MAX)
+
     val title = when (step) {
-        ChangePinStep.Current -> "Enter current PIN"
-        ChangePinStep.New -> "Choose a new PIN"
-        ChangePinStep.Confirm -> "Confirm new PIN"
+        ChangeLockStep.VerifyCurrent -> "Verify ${currentLockType.displayName.lowercase()}"
+        ChangeLockStep.ChooseType -> "Choose new lock type"
+        ChangeLockStep.EnterNew -> "Set new ${newType?.displayName ?: "lock"}"
+        ChangeLockStep.ConfirmNew -> "Confirm new ${newType?.displayName ?: "lock"}"
     }
     val subtitle = when (step) {
-        ChangePinStep.Current -> "Verify it’s you before changing the PIN"
-        ChangePinStep.New -> "4 digits. Avoid weak codes. Biometric unlock will turn off."
-        ChangePinStep.Confirm -> "Enter the new PIN again"
+        ChangeLockStep.VerifyCurrent -> "Confirm it’s you before changing the lock"
+        ChangeLockStep.ChooseType -> "Switch PIN, password, or pattern. Biometric unlock will turn off."
+        ChangeLockStep.EnterNew -> when (newType) {
+            LockType.PIN -> "4–6 digits. Avoid weak codes."
+            LockType.PASSWORD -> "6–10 characters."
+            LockType.PATTERN -> "Connect at least ${LockRules.PATTERN_MIN_POINTS} dots"
+            null -> ""
+        }
+        ChangeLockStep.ConfirmNew -> "Enter the same credential again"
     }
 
-    fun handleDigit(c: Char) {
-        if (busy) return
+    fun goAfterVerify(secret: String) {
+        current = secret
         localError = null
-        when (step) {
-            ChangePinStep.Current -> {
-                if (current.length >= PinRules.PIN_LENGTH) return
-                val next = current + c
-                current = next
-                if (next.length == PinRules.PIN_LENGTH) {
-                    step = ChangePinStep.New
-                }
-            }
-            ChangePinStep.New -> {
-                if (newPin.length >= PinRules.PIN_LENGTH) return
-                val next = newPin + c
-                newPin = next
-                if (next.length == PinRules.PIN_LENGTH) {
-                    val err = PinRules.validateNewPin(next)
-                    when {
-                        err != null -> {
-                            localError = err
-                            newPin = ""
-                        }
-                        next == current -> {
-                            localError = "New PIN must be different"
-                            newPin = ""
-                        }
-                        else -> step = ChangePinStep.Confirm
-                    }
-                }
-            }
-            ChangePinStep.Confirm -> {
-                if (confirm.length >= PinRules.PIN_LENGTH) return
-                val next = confirm + c
-                confirm = next
-                if (next.length == PinRules.PIN_LENGTH) {
-                    if (next != newPin) {
-                        localError = "PINs do not match"
-                        confirm = ""
-                    } else {
-                        onSubmit(current, newPin)
-                    }
-                }
-            }
-        }
+        step = ChangeLockStep.ChooseType
     }
 
-    fun handleBack() {
-        if (busy) return
-        localError = null
-        when (step) {
-            ChangePinStep.Current -> {
-                if (current.isNotEmpty()) current = current.dropLast(1)
-            }
-            ChangePinStep.New -> {
-                if (newPin.isEmpty()) {
-                    step = ChangePinStep.Current
-                    current = ""
-                } else {
-                    newPin = newPin.dropLast(1)
-                }
-            }
-            ChangePinStep.Confirm -> {
-                if (confirm.isEmpty()) {
-                    step = ChangePinStep.New
-                    newPin = ""
-                } else {
-                    confirm = confirm.dropLast(1)
-                }
-            }
+    fun acceptNew(secret: String) {
+        val type = newType ?: return
+        val err = LockRules.validateNew(type, secret)
+        if (err != null) {
+            localError = err
+            newCred = ""
+            return
         }
+        if (type == currentLockType && secret == current) {
+            localError = "New credential must be different"
+            newCred = ""
+            return
+        }
+        newCred = secret
+        confirm = ""
+        localError = null
+        step = ChangeLockStep.ConfirmNew
+    }
+
+    fun acceptConfirm(secret: String) {
+        val type = newType ?: return
+        if (secret != newCred) {
+            localError = "${type.displayName}s do not match"
+            confirm = ""
+            return
+        }
+        onSubmit(current, type, newCred)
     }
 
     AlertDialog(
@@ -143,24 +120,83 @@ fun ChangePinDialog(
         title = { Text(title) },
         text = {
             Column(
-                Modifier.fillMaxWidth(),
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 520.dp)
+                    .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = VaultTextMuted)
-                Spacer(Modifier.height(20.dp))
-                PinDots(filled = display.length)
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(16.dp))
                 val err = localError ?: errorMessage
                 if (err != null) {
                     Text(err, color = VaultDanger, style = MaterialTheme.typography.bodySmall)
                     Spacer(Modifier.height(8.dp))
                 }
-                PinPad(
-                    enabled = !busy,
-                    onDigit = { handleDigit(it) },
-                    onBackspace = { handleBack() },
-                    modifier = Modifier.padding(top = 4.dp),
-                )
+
+                when (step) {
+                    ChangeLockStep.VerifyCurrent -> {
+                        CredentialEntry(
+                            type = currentLockType,
+                            value = current,
+                            onValueChange = { current = it; localError = null },
+                            pinSlots = pinSlots,
+                            setupMode = false,
+                            confirmAgainstLength = null,
+                            busy = busy,
+                            onComplete = { goAfterVerify(it) },
+                        )
+                    }
+                    ChangeLockStep.ChooseType -> {
+                        LockTypeChooser(
+                            selected = newType,
+                            onSelect = { newType = it },
+                        )
+                        TextButton(
+                            onClick = {
+                                if (newType != null) {
+                                    newCred = ""
+                                    confirm = ""
+                                    localError = null
+                                    step = ChangeLockStep.EnterNew
+                                }
+                            },
+                            enabled = newType != null && !busy,
+                        ) {
+                            Text("Continue", color = VaultAccent)
+                        }
+                    }
+                    ChangeLockStep.EnterNew -> {
+                        val type = newType ?: LockType.PIN
+                        CredentialEntry(
+                            type = type,
+                            value = newCred,
+                            onValueChange = { newCred = it; localError = null },
+                            pinSlots = LockRules.PIN_MAX,
+                            setupMode = true,
+                            confirmAgainstLength = null,
+                            busy = busy,
+                            onComplete = { acceptNew(it) },
+                        )
+                    }
+                    ChangeLockStep.ConfirmNew -> {
+                        val type = newType ?: LockType.PIN
+                        CredentialEntry(
+                            type = type,
+                            value = confirm,
+                            onValueChange = { confirm = it; localError = null },
+                            pinSlots = if (type == LockType.PIN) {
+                                newCred.length.coerceIn(LockRules.PIN_MIN, LockRules.PIN_MAX)
+                            } else {
+                                LockRules.PIN_MAX
+                            },
+                            setupMode = true,
+                            confirmAgainstLength = if (type == LockType.PIN) newCred.length else null,
+                            busy = busy,
+                            onComplete = { acceptConfirm(it) },
+                        )
+                    }
+                }
             }
         },
         confirmButton = {},
@@ -170,4 +206,66 @@ fun ChangePinDialog(
             }
         },
     )
+}
+
+@Composable
+private fun CredentialEntry(
+    type: LockType,
+    value: String,
+    onValueChange: (String) -> Unit,
+    pinSlots: Int,
+    setupMode: Boolean,
+    confirmAgainstLength: Int?,
+    busy: Boolean,
+    onComplete: (String) -> Unit,
+) {
+    when (type) {
+        LockType.PIN -> {
+            PinDots(filled = value.length, slotCount = pinSlots)
+            Spacer(Modifier.height(12.dp))
+            PinPad(
+                enabled = !busy,
+                onDigit = { c ->
+                    if (busy) return@PinPad
+                    if (value.length >= pinSlots) return@PinPad
+                    val next = value + c
+                    onValueChange(next)
+                    val target = confirmAgainstLength ?: pinSlots
+                    if (setupMode && confirmAgainstLength != null) {
+                        if (next.length == target) onComplete(next)
+                    } else if (setupMode) {
+                        if (next.length == LockRules.PIN_MAX) onComplete(next)
+                    } else if (next.length == pinSlots) {
+                        onComplete(next)
+                    }
+                },
+                onBackspace = {
+                    if (!busy && value.isNotEmpty()) onValueChange(value.dropLast(1))
+                },
+                showEnter = setupMode && confirmAgainstLength == null,
+                enterEnabled = value.length in LockRules.PIN_MIN until LockRules.PIN_MAX,
+                onEnter = {
+                    if (value.length >= LockRules.PIN_MIN) onComplete(value)
+                },
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+        LockType.PASSWORD -> {
+            PasswordLockField(
+                value = value,
+                onValueChange = onValueChange,
+                onSubmit = { onComplete(value) },
+                enabled = !busy,
+                submitLabel = "Continue",
+            )
+        }
+        LockType.PATTERN -> {
+            PatternLock(
+                enabled = !busy,
+                onPatternComplete = onComplete,
+                compact = true,
+                maxSize = 240.dp,
+            )
+        }
+    }
 }

@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import app.vault.workspace.BuildConfig
 import app.vault.workspace.data.formatHumanSize
 import app.vault.workspace.auth.AutoLockController
+import app.vault.workspace.auth.LockType
 import app.vault.workspace.ui.theme.VaultAccent
 import app.vault.workspace.ui.theme.VaultBg
 import app.vault.workspace.ui.theme.VaultDanger
@@ -59,7 +60,9 @@ fun SettingsScreen(
     onBiometricToggle: (Boolean) -> Unit = {},
     biometricError: String? = null,
     storageUsedBytes: Long = 0L,
-    onChangePin: (current: String, newPin: String) -> Unit = { _, _ -> },
+    currentLockType: LockType = LockType.PIN,
+    currentPinLength: Int = 4,
+    onChangeLock: (current: String, newType: LockType, newCredential: String) -> Unit = { _, _, _ -> },
     changePinError: String? = null,
     changePinBusy: Boolean = false,
     changePinSuccessEpoch: Int = 0,
@@ -137,10 +140,10 @@ fun SettingsScreen(
             )
             HorizontalDivider()
             ListItem(
-                headlineContent = { Text("Change PIN") },
+                headlineContent = { Text("Change lock") },
                 supportingContent = {
                     Text(
-                        "Re-wrap vault key with a new PIN. Biometric unlock turns off.",
+                        "Switch PIN, password, or pattern. Re-wraps vault key; biometric turns off.",
                         color = VaultTextMuted,
                     )
                 },
@@ -166,7 +169,7 @@ fun SettingsScreen(
                     supportingContent = {
                         Text(
                             biometricError
-                                ?: "Unlock with fingerprint or face. PIN always works as fallback.",
+                                ?: "Unlock with fingerprint or face. Your lock credential always works as fallback.",
                             color = if (biometricError != null) VaultDanger else VaultTextMuted,
                         )
                     },
@@ -230,10 +233,10 @@ fun SettingsScreen(
             )
             HorizontalDivider()
             ListItem(
-                headlineContent = { Text("PIN recovery") },
+                headlineContent = { Text("Lock recovery") },
                 supportingContent = {
                     Text(
-                        "Your PIN cannot be recovered. Forgetting it permanently locks this vault.",
+                        "Your lock credential cannot be recovered. Forgetting it permanently locks this vault.",
                         color = VaultTextMuted,
                     )
                 },
@@ -284,14 +287,16 @@ fun SettingsScreen(
 
     if (showChangePin) {
         ChangePinDialog(
+            currentLockType = currentLockType,
+            currentPinLength = currentPinLength,
             errorMessage = changePinError,
             busy = changePinBusy,
             onDismiss = {
                 showChangePin = false
                 onClearChangePinError()
             },
-            onSubmit = { current, newPin ->
-                onChangePin(current, newPin)
+            onSubmit = { current, newType, newCred ->
+                onChangeLock(current, newType, newCred)
             },
         )
     }

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -19,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.vault.workspace.ui.theme.VaultAccent
+import app.vault.workspace.ui.theme.VaultOnAccent
 import app.vault.workspace.ui.theme.VaultTextMuted
 
 @Composable
@@ -41,8 +43,8 @@ fun FirstRunScreen(onContinue: () -> Unit) {
         Spacer(Modifier.height(16.dp))
         Text(
             "Your files stay encrypted on this device. There is no account and no cloud.\n\n" +
-                "Your PIN cannot be recovered. If you forget it, your vault is permanently inaccessible. " +
-                "Clearing app data also destroys the vault.",
+                "Choose a PIN, password, or pattern. It cannot be recovered — if you forget it, " +
+                "your vault is permanently inaccessible. Clearing app data also destroys the vault.",
             style = MaterialTheme.typography.bodyLarge,
             color = VaultTextMuted,
             textAlign = TextAlign.Center,
@@ -51,8 +53,12 @@ fun FirstRunScreen(onContinue: () -> Unit) {
         Button(
             onClick = onContinue,
             modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = VaultAccent,
+                contentColor = VaultOnAccent,
+            ),
         ) {
-            Text("Create PIN")
+            Text("Create lock")
         }
     }
 }

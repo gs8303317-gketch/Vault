@@ -13,9 +13,13 @@ import java.util.concurrent.CopyOnWriteArrayList
 /**
  * Holds VMK in RAM while unlocked. Lock wipes VMK and notifies listeners
  * (stop players, delete PDF tmp).
+ *
+ * Credential (PIN / password / pattern secret) → PBKDF2 → KEK wraps VMK in vault.hdr.
+ * Changing lock type re-wraps the same VMK under a new salt/KEK; vault blobs untouched.
  */
 class SessionManager(private val context: Context) {
     private val lockout = LockoutStore(context)
+    private val lockPrefs = LockPrefs(context)
     private val _state = MutableStateFlow<SessionState>(SessionState.Locked)
     val state: StateFlow<SessionState> = _state.asStateFlow()
 
@@ -32,6 +36,12 @@ class SessionManager(private val context: Context) {
 
     fun lockoutStore(): LockoutStore = lockout
 
+    fun lockPrefs(): LockPrefs = lockPrefs
+
+    fun lockType(): LockType = lockPrefs.lockType
+
+    fun pinLength(): Int = lockPrefs.pinLength
+
     fun addLockListener(listener: () -> Unit) {
         lockListeners.add(listener)
     }
@@ -40,17 +50,25 @@ class SessionManager(private val context: Context) {
         lockListeners.remove(listener)
     }
 
-    fun setup(pin: String): Result<Unit> {
-        PinRules.validateNewPin(pin)?.let { return Result.failure(IllegalArgumentException(it)) }
+    fun setup(credential: String, type: LockType = LockType.PIN): Result<Unit> {
+        LockRules.validateNew(type, credential)?.let {
+            return Result.failure(IllegalArgumentException(it))
+        }
         if (isSetupComplete) return Result.failure(IllegalStateException("Already set up"))
         return try {
             val salt = KeyHierarchy.generateSalt()
             val newVmk = KeyHierarchy.generateVmk()
-            val kek = KeyHierarchy.deriveKek(pin.toCharArray(), salt)
+            val chars = credential.toCharArray()
+            val kek = KeyHierarchy.deriveKek(chars, salt)
             try {
+                chars.fill('\u0000')
                 val wrapped = KeyHierarchy.wrapVmk(kek, newVmk)
                 val encoded = KeyHierarchy.encodeVaultHeader(salt, KeyHierarchy.PBKDF2_ITERS, wrapped)
                 writeHeaderAtomic(encoded)
+                lockPrefs.setLock(
+                    type,
+                    pinLength = if (type == LockType.PIN) credential.length else null,
+                )
                 vmk = newVmk.copyOf()
                 KeyHierarchy.wipe(newVmk)
                 lockout.recordSuccess()
@@ -65,12 +83,19 @@ class SessionManager(private val context: Context) {
         }
     }
 
-    fun unlock(pin: String): Result<Unit> {
+    fun unlock(credential: String): Result<Unit> {
         if (!isSetupComplete) {
             return Result.failure(CorruptHeaderException())
         }
-        if (!PinRules.isExactFourDigits(pin)) {
-            return Result.failure(IllegalArgumentException("Invalid PIN"))
+        val type = lockPrefs.lockType
+        val expectedPinLen = if (type == LockType.PIN) lockPrefs.pinLength else null
+        if (!LockRules.isValidUnlockFormat(type, credential, expectedPinLen)) {
+            // Legacy vaults: PIN length pref may be wrong if user never migrated —
+            // still allow any valid PIN format when stored type is PIN.
+            val looseOk = type == LockType.PIN && LockRules.isValidPinFormat(credential)
+            if (!looseOk) {
+                return Result.failure(IllegalArgumentException("Invalid credential"))
+            }
         }
         if (lockout.isLocked()) {
             return Result.failure(LockedOutException(lockout.remainingLockMs()))
@@ -78,11 +103,17 @@ class SessionManager(private val context: Context) {
         return try {
             val hdr = readValidHeader()
                 ?: return Result.failure(CorruptHeaderException())
-            val kek = KeyHierarchy.deriveKek(pin.toCharArray(), hdr.salt, hdr.iterations)
+            val chars = credential.toCharArray()
+            val kek = KeyHierarchy.deriveKek(chars, hdr.salt, hdr.iterations)
             try {
+                chars.fill('\u0000')
                 val unlocked = KeyHierarchy.unwrapVmk(kek, hdr.wrappedVmk)
                 KeyHierarchy.wipe(vmk)
                 vmk = unlocked
+                // Sync PIN length if unlock succeeded with a different length than prefs
+                if (type == LockType.PIN && credential.length != lockPrefs.pinLength) {
+                    lockPrefs.pinLength = credential.length
+                }
                 lockout.recordSuccess()
                 ensureDirs()
                 _state.value = SessionState.Unlocked
@@ -142,28 +173,39 @@ class SessionManager(private val context: Context) {
     fun peekVmk(): ByteArray? = vmk?.copyOf()
 
     /**
-     * Re-wrap VMK under a new PIN-derived KEK. Clears biometric wrap (must re-enable).
-     * Session stays unlocked; intermediates wiped.
+     * Verify [currentCredential], then re-wrap VMK under a new KEK from [newCredential]
+     * and persist [newType]. Clears biometric wrap (must re-enable). Session stays unlocked.
      */
-    fun changePin(currentPin: String, newPin: String): Result<Unit> {
+    fun changeLock(
+        currentCredential: String,
+        newType: LockType,
+        newCredential: String,
+    ): Result<Unit> {
         if (_state.value !is SessionState.Unlocked || vmk == null) {
             return Result.failure(IllegalStateException("Vault is locked"))
         }
-        if (!PinRules.isExactFourDigits(currentPin)) {
-            return Result.failure(IllegalArgumentException("Current PIN invalid"))
+        val currentType = lockPrefs.lockType
+        val expectedPinLen = if (currentType == LockType.PIN) lockPrefs.pinLength else null
+        val currentFormatOk =
+            LockRules.isValidUnlockFormat(currentType, currentCredential, expectedPinLen) ||
+                (currentType == LockType.PIN && LockRules.isValidPinFormat(currentCredential))
+        if (!currentFormatOk) {
+            return Result.failure(IllegalArgumentException("Current credential invalid"))
         }
-        PinRules.validateNewPin(newPin)?.let {
+        LockRules.validateNew(newType, newCredential)?.let {
             return Result.failure(IllegalArgumentException(it))
         }
-        if (currentPin == newPin) {
-            return Result.failure(IllegalArgumentException("New PIN must be different"))
+        if (currentType == newType && currentCredential == newCredential) {
+            return Result.failure(IllegalArgumentException("New credential must be different"))
         }
         return try {
             val hdr = readValidHeader()
                 ?: return Result.failure(CorruptHeaderException())
-            val oldKek = KeyHierarchy.deriveKek(currentPin.toCharArray(), hdr.salt, hdr.iterations)
+            val oldChars = currentCredential.toCharArray()
+            val oldKek = KeyHierarchy.deriveKek(oldChars, hdr.salt, hdr.iterations)
             try {
-                // Verify current PIN by unwrapping; must match session VMK
+                oldChars.fill('\u0000')
+                // Verify current credential by unwrapping; must match session VMK
                 val check = KeyHierarchy.unwrapVmk(oldKek, hdr.wrappedVmk)
                 val match = check.contentEquals(vmk)
                 KeyHierarchy.wipe(check)
@@ -177,8 +219,10 @@ class SessionManager(private val context: Context) {
             }
 
             val newSalt = KeyHierarchy.generateSalt()
-            val newKek = KeyHierarchy.deriveKek(newPin.toCharArray(), newSalt)
+            val newChars = newCredential.toCharArray()
+            val newKek = KeyHierarchy.deriveKek(newChars, newSalt)
             try {
+                newChars.fill('\u0000')
                 val sessionVmk = vmk ?: return Result.failure(IllegalStateException("Vault is locked"))
                 val wrapped = KeyHierarchy.wrapVmk(newKek, sessionVmk)
                 val encoded = KeyHierarchy.encodeVaultHeader(
@@ -187,6 +231,10 @@ class SessionManager(private val context: Context) {
                     wrapped,
                 )
                 writeHeaderAtomic(encoded)
+                lockPrefs.setLock(
+                    newType,
+                    pinLength = if (newType == LockType.PIN) newCredential.length else null,
+                )
             } finally {
                 KeyHierarchy.wipe(newKek)
             }
@@ -202,6 +250,13 @@ class SessionManager(private val context: Context) {
             Result.failure(e)
         }
     }
+
+    /**
+     * Re-wrap VMK under a new PIN-derived KEK. Clears biometric wrap (must re-enable).
+     * Session stays unlocked; intermediates wiped.
+     */
+    fun changePin(currentPin: String, newPin: String): Result<Unit> =
+        changeLock(currentPin, LockType.PIN, newPin)
 
     fun lock() {
         KeyHierarchy.wipe(vmk)
@@ -313,7 +368,7 @@ class SessionManager(private val context: Context) {
         data object Unlocked : SessionState()
     }
 
-    class WrongPinException(val attempts: Int) : Exception("Wrong PIN")
+    class WrongPinException(val attempts: Int) : Exception("Wrong credential")
     class LockedOutException(val remainingMs: Long) : Exception("Locked out")
     class CorruptHeaderException : Exception("Vault header missing or corrupt")
 }

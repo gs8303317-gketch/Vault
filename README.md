@@ -1,6 +1,14 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.4.17** — Image Viewer UX polish (tool rail, chrome keep-alive, crop, perf, video Back).
+Offline encrypted personal workspace for Android. **v0.4.18** — Lock / auth UX: PIN 4–6, password, pattern; change lock type anytime.
+
+## What this release adds (v0.4.18 / versionCode 35)
+
+- **Lock types**: first-run chooses **PIN** (4–6 digits), **Password** (6–10 chars), or **Pattern** (3×3, min 4 dots). Unlock UI matches the stored type; prefs keep type + PIN length (auto-submit).
+- **Change lock** (Settings): verify current credential → pick new type → confirm. Same VMK re-wrapped under new salt/KEK via `SessionManager.changeLock`; biometric wrap cleared (re-enable after). Never stores plaintext credential; CharArray wiped after PBKDF2.
+- **Premium unlock chrome**: gold-accent pad / pattern / password field; landscape side-by-side kept. Weak-PIN checks for digit PINs (runs, repeats, common lists).
+- **Rules**: `LockRules` / `LockType` / `LockPrefs` replace hardcoded `PinRules.PIN_LENGTH=4`. Unit tests for validation + KEK re-wrap happy path.
+- Still **no INTERNET**, no PiP, media seek untouched.
 
 ## What this release adds (v0.4.17 / versionCode 34)
 
@@ -183,7 +191,7 @@ Offline encrypted personal workspace for Android. **v0.4.17** — Image Viewer U
 
 ## What still works
 
-- 4-digit PIN setup / unlock / **change** (weak PINs rejected, progressive lockout on unlock)
+- Lock credential setup / unlock / **change** — PIN 4–6 / password / pattern (weak PINs rejected, progressive lockout on unlock)
 - VAULT1 chunked AES-256-GCM + PBKDF2-HMAC-SHA256 (210 000 iterations)
 - SAF multi-file import + **share-sheet import**; SAF export with confirmation
 - Image / Media3 decrypting playback (**audio + video**: EncryptedDataSource Path A; one-time Path B prepare for unseekable containers → re-encrypted progressive MP4; Media3 1.11) / **secure PDF** (proxy/memfd)
@@ -200,7 +208,7 @@ Nested folders, bulk export, tablet two-pane, import cancel/resume, image editor
 - Biometric wrap is invalidated if biometrics are re-enrolled on the device; also cleared after **Change PIN** — re-enable from Settings after PIN unlock
 - Rooted / unlocked session can read vault memory and files
 - Screenshots of unlocked screens work (intentional for testing in P0–P3)
-- PIN cannot be recovered — clear data destroys the vault
+- Lock credential cannot be recovered — clear data destroys the vault
 - PDF viewing prefers proxy/memfd (no durable plaintext); only a wiped last-resort tmp if both fail on a device
 - Export writes an **unencrypted** copy by design
 - Video thumbnails depend on device codec / MediaMetadataRetriever; import still succeeds if thumb fails

@@ -41,6 +41,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import app.vault.workspace.auth.AutoLockController
 import app.vault.workspace.auth.BiometricVault
+import app.vault.workspace.auth.LockType
 import app.vault.workspace.auth.SessionManager
 import app.vault.workspace.data.VaultFolder
 import app.vault.workspace.data.VaultCategory
@@ -282,12 +283,12 @@ fun VaultNav(
             val info = BiometricPrompt.PromptInfo.Builder()
                 .setTitle("Unlock Vault")
                 .setSubtitle("Use biometrics to unlock")
-                .setNegativeButtonText("Use PIN")
+                .setNegativeButtonText("Use " + session.lockType().displayName)
                 .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
                 .build()
             prompt.authenticate(info, BiometricPrompt.CryptoObject(cipher))
         } catch (e: Exception) {
-            unlockError = "Biometrics unavailable — use PIN"
+            unlockError = "Biometrics unavailable — use your lock"
         }
     }
 
@@ -491,9 +492,9 @@ fun VaultNav(
         composable(Routes.SetupPin) {
             SetupPinScreen(
                 errorMessage = setupError,
-                onPinConfirmed = { pin ->
+                onLockConfirmed = { type, credential ->
                     scope.launch {
-                        val result = session.setup(pin)
+                        val result = session.setup(credential, type)
                         result.onSuccess {
                             setupError = null
                             nav.navigate(Routes.Library) {
@@ -508,12 +509,15 @@ fun VaultNav(
         }
         composable(Routes.Unlock) {
             val bioReady = biometricHardware && BiometricVault.isEnabled(context)
+            val lockType = session.lockType()
             UnlockScreen(
                 lockedOutMs = lockoutMs,
                 errorMessage = unlockError,
-                onSubmitPin = { pin ->
+                lockType = lockType,
+                pinLength = session.pinLength(),
+                onSubmitCredential = { credential ->
                     scope.launch {
-                        val result = session.unlock(pin)
+                        val result = session.unlock(credential)
                         result.onSuccess {
                             unlockError = null
                             lockoutMs = 0
@@ -527,7 +531,7 @@ fun VaultNav(
                                     unlockError = null
                                 }
                                 is SessionManager.WrongPinException -> {
-                                    unlockError = "Wrong PIN"
+                                    unlockError = "Wrong ${lockType.displayName.lowercase()}"
                                     lockoutMs = session.lockoutStore().remainingLockMs()
                                 }
                                 is SessionManager.CorruptHeaderException -> {
@@ -676,25 +680,28 @@ fun VaultNav(
                 },
                 biometricError = biometricError,
                 storageUsedBytes = storageUsedBytes,
+                currentLockType = session.lockType(),
+                currentPinLength = session.pinLength(),
                 changePinError = changePinError,
                 changePinBusy = changePinBusy,
                 changePinSuccessEpoch = changePinSuccessEpoch,
                 onClearChangePinError = { changePinError = null },
-                onChangePin = { current, newPin ->
+                onChangeLock = { current, newType, newCred ->
                     scope.launch {
                         changePinBusy = true
                         changePinError = null
-                        val result = session.changePin(current, newPin)
+                        val result = session.changeLock(current, newType, newCred)
                         changePinBusy = false
                         result.onSuccess {
                             biometricEnabled = false
                             changePinSuccessEpoch += 1
                             statusMessage =
-                                "PIN changed. Biometric unlock was turned off — re-enable in Settings if desired."
+                                "Lock changed. Biometric unlock was turned off — re-enable in Settings if desired."
                         }.onFailure { e ->
                             changePinError = when (e) {
-                                is SessionManager.WrongPinException -> "Wrong current PIN"
-                                else -> e.message ?: "Could not change PIN"
+                                is SessionManager.WrongPinException ->
+                                    "Wrong current ${session.lockType().displayName.lowercase()}"
+                                else -> e.message ?: "Could not change lock"
                             }
                         }
                     }
