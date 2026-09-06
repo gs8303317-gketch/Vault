@@ -29,10 +29,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -50,12 +55,31 @@ import app.vault.workspace.ui.theme.VaultTextMuted
 fun LibraryScreen(
     items: List<VaultItem>,
     importing: Boolean,
+    statusMessage: String? = null,
+    onDismissStatus: () -> Unit = {},
     onImport: () -> Unit,
     onOpenItem: (VaultItem) -> Unit,
     onSettings: () -> Unit,
 ) {
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(statusMessage) {
+        val msg = statusMessage ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(msg)
+        onDismissStatus()
+    }
+
     Scaffold(
         containerColor = VaultBg,
+        snackbarHost = {
+            SnackbarHost(snackbarHostState) { data ->
+                Snackbar(
+                    snackbarData = data,
+                    containerColor = VaultSurface,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    actionColor = VaultAccent,
+                )
+            }
+        },
         topBar = {
             TopAppBar(
                 title = { Text("Vault") },

@@ -12,7 +12,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.platform.LocalContext
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -43,6 +42,20 @@ object Routes {
     fun viewer(id: String) = "viewer/$id"
 }
 
+private val IMPORT_MIME_TYPES = arrayOf(
+    "image/*",
+    "video/*",
+    "audio/*",
+    "application/pdf",
+    "text/*",
+    "application/zip",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "*/*",
+)
+
 @Composable
 fun VaultNav(
     session: SessionManager,
@@ -51,7 +64,6 @@ fun VaultNav(
 ) {
     val nav = rememberNavController()
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
     val sessionState by session.state.collectAsState()
     val start = if (session.isSetupComplete) Routes.Unlock else Routes.FirstRun
 
@@ -59,6 +71,7 @@ fun VaultNav(
     var unlockError by remember { mutableStateOf<String?>(null) }
     var lockoutMs by remember { mutableLongStateOf(0L) }
     var importing by remember { mutableStateOf(false) }
+    var statusMessage by remember { mutableStateOf<String?>(null) }
     var items by remember { mutableStateOf<List<VaultItem>>(emptyList()) }
     var activePlayers by remember { mutableStateOf<List<ExoPlayer>>(emptyList()) }
     var pendingExport by remember { mutableStateOf<VaultItem?>(null) }
@@ -74,6 +87,7 @@ fun VaultNav(
             activePlayers.forEach { it.release() }
             activePlayers = emptyList()
             autoLock.setPlaybackActive(false)
+            autoLock.setDeferBackgroundLock(false)
             if (session.isSetupComplete) {
                 nav.navigate(Routes.Unlock) {
                     popUpTo(0) { inclusive = true }
@@ -94,11 +108,30 @@ fun VaultNav(
     val openDocLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris: List<Uri> ->
-        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        autoLock.setDeferBackgroundLock(false)
+        if (uris.isEmpty()) {
+            statusMessage = null
+            return@rememberLauncherForActivityResult
+        }
+        if (session.state.value !is SessionManager.SessionState.Unlocked) {
+            statusMessage = "Vault locked during import — unlock and try again"
+            return@rememberLauncherForActivityResult
+        }
         scope.launch {
             importing = true
+            statusMessage = "Importing ${uris.size} file(s)…"
             try {
-                importController.importAll(uris)
+                val result = importController.importAll(uris)
+                statusMessage = when {
+                    result.failures.isEmpty() ->
+                        "Imported ${result.succeeded.size} file(s)"
+                    result.succeeded.isEmpty() ->
+                        "Import failed: ${result.failures.firstOrNull()?.second ?: "unknown error"}"
+                    else ->
+                        "Imported ${result.succeeded.size}, failed ${result.failures.size}"
+                }
+            } catch (e: Exception) {
+                statusMessage = "Import failed: ${e.message ?: "error"}"
             } finally {
                 importing = false
             }
@@ -108,11 +141,20 @@ fun VaultNav(
     val createDocLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("*/*"),
     ) { uri: Uri? ->
-        val item = pendingExport ?: return@rememberLauncherForActivityResult
+        autoLock.setDeferBackgroundLock(false)
+        val item = pendingExport
         pendingExport = null
-        if (uri == null) return@rememberLauncherForActivityResult
+        if (uri == null || item == null) return@rememberLauncherForActivityResult
+        if (session.state.value !is SessionManager.SessionState.Unlocked) {
+            statusMessage = "Vault locked during export — unlock and try again"
+            return@rememberLauncherForActivityResult
+        }
         scope.launch {
-            exportController.export(item.id, uri)
+            val result = exportController.export(item.id, uri)
+            statusMessage = result.fold(
+                onSuccess = { "Exported ${item.displayName}" },
+                onFailure = { "Export failed: ${it.message ?: "error"}" },
+            )
         }
     }
 
@@ -178,8 +220,11 @@ fun VaultNav(
             LibraryScreen(
                 items = items,
                 importing = importing,
+                statusMessage = statusMessage,
+                onDismissStatus = { statusMessage = null },
                 onImport = {
-                    openDocLauncher.launch(arrayOf("*/*"))
+                    autoLock.setDeferBackgroundLock(true)
+                    openDocLauncher.launch(IMPORT_MIME_TYPES)
                 },
                 onOpenItem = { item ->
                     autoLock.bumpIdle()
@@ -213,6 +258,7 @@ fun VaultNav(
                     onBack = { nav.popBackStack() },
                     onRequestExport = { vaultItem ->
                         pendingExport = vaultItem
+                        autoLock.setDeferBackgroundLock(true)
                         createDocLauncher.launch(vaultItem.displayName)
                     },
                     onPlaybackActive = { active -> autoLock.setPlaybackActive(active) },
