@@ -7,12 +7,14 @@ import androidx.media3.datasource.DataSpec
 import app.vault.workspace.crypto.VaultCrypto
 import app.vault.workspace.crypto.VaultFormat
 import java.io.File
+import java.io.IOException
 import java.io.RandomAccessFile
 import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Media3 DataSource that decrypts VAULT1 on demand for the requested byte range.
- * Supports random access so ProgressiveMediaSource can build a SeekMap and seek.
+ * Supports random access so ProgressiveMediaSource / Mp4Extractor / MatroskaExtractor
+ * can build a SeekMap (including moov/cues at end) and seek.
  *
  * [dataSpec.position] is a plaintext byte offset. Each [open] starts a fresh read
  * window; Media3 closes and re-opens on every seek.
@@ -39,22 +41,32 @@ class EncryptedDataSource(
             releaseRaf()
         }
         transferInitializing(dataSpec)
-        val localRaf = RandomAccessFile(vatFile, "r")
-        raf = localRaf
-        val start = dataSpec.position.coerceAtLeast(0L)
-        require(start <= cachedHeader.plaintextSize) {
-            "DataSpec position $start past plaintext ${cachedHeader.plaintextSize}"
+        try {
+            val localRaf = RandomAccessFile(vatFile, "r")
+            raf = localRaf
+            val start = dataSpec.position.coerceAtLeast(0L)
+            if (start > cachedHeader.plaintextSize) {
+                throw IOException(
+                    "DataSpec position $start past plaintext ${cachedHeader.plaintextSize}",
+                )
+            }
+            position = start
+            bytesRemaining = if (dataSpec.length != C.LENGTH_UNSET.toLong()) {
+                dataSpec.length.coerceAtMost(cachedHeader.plaintextSize - start)
+            } else {
+                (cachedHeader.plaintextSize - start).coerceAtLeast(0L)
+            }
+            uri = dataSpec.uri
+            opened = true
+            transferStarted(dataSpec)
+            return bytesRemaining
+        } catch (e: IOException) {
+            releaseRaf()
+            throw e
+        } catch (e: Exception) {
+            releaseRaf()
+            throw IOException("EncryptedDataSource open failed at pos=${dataSpec.position}", e)
         }
-        position = start
-        bytesRemaining = if (dataSpec.length != C.LENGTH_UNSET.toLong()) {
-            dataSpec.length.coerceAtMost(cachedHeader.plaintextSize - start)
-        } else {
-            (cachedHeader.plaintextSize - start).coerceAtLeast(0L)
-        }
-        uri = dataSpec.uri
-        opened = true
-        transferStarted(dataSpec)
-        return bytesRemaining
     }
 
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
@@ -62,20 +74,29 @@ class EncryptedDataSource(
         if (bytesRemaining == 0L) return C.RESULT_END_OF_INPUT
         val localRaf = raf ?: return C.RESULT_END_OF_INPUT
         val toRead = minOf(length.toLong(), bytesRemaining).toInt()
-        val n = chunkCache.decryptRange(
-            localRaf,
-            cachedHeader,
-            dek,
-            position,
-            toRead,
-            buffer,
-            offset,
-        )
-        if (n <= 0) return C.RESULT_END_OF_INPUT
-        position += n
-        bytesRemaining -= n
-        bytesTransferred(n)
-        return n
+        return try {
+            val n = chunkCache.decryptRange(
+                localRaf,
+                cachedHeader,
+                dek,
+                position,
+                toRead,
+                buffer,
+                offset,
+            )
+            if (n <= 0) return C.RESULT_END_OF_INPUT
+            position += n
+            bytesRemaining -= n
+            bytesTransferred(n)
+            n
+        } catch (e: IOException) {
+            throw e
+        } catch (e: Exception) {
+            throw IOException(
+                "EncryptedDataSource read failed at pos=$position len=$toRead",
+                e,
+            )
+        }
     }
 
     override fun getUri(): Uri? = if (opened) uri else null
@@ -102,9 +123,10 @@ class EncryptedDataSource(
 
 /**
  * Small plaintext-chunk cache shared by all DataSources for one playback session.
- * Speeds sequential reads and nearby seeks without holding the whole file.
+ * Speeds sequential reads and nearby seeks (incl. moov/cues at end + current window)
+ * without holding the whole file.
  */
-class ChunkCache(private val maxEntries: Int = 16) {
+class ChunkCache(private val maxEntries: Int = 48) {
     private data class Entry(val index: Int, val plain: ByteArray)
 
     private val map = ConcurrentHashMap<Int, Entry>()

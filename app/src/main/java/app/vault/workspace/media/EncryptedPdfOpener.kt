@@ -3,7 +3,7 @@ package app.vault.workspace.media
 import android.content.Context
 import java.io.File
 
-/** PDF-facing alias — same seekable PFD handle as media playback. */
+/** PDF-facing alias for [EncryptedSeekableHandle] (proxy/memfd/tmp). */
 typealias EncryptedPdfHandle = EncryptedSeekableHandle
 
 /**

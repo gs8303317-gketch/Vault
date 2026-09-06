@@ -1,11 +1,19 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.4.3** — video seek via proxy FD (Media3 sees a real seekable file).
+Offline encrypted personal workspace for Android. **v0.4.4** — playback restored via EncryptedDataSource (proxy `/proc` player path removed).
+
+## What this release adds (v0.4.4 / versionCode 21)
+
+- **Playback restored**: `PlayerFactory.createDecryptingPlayer` always uses proven `EncryptedDataSource` / `EncryptedDataSourceFactory`. Removed `/proc/self/fd` + `FileDataSource` player path — StorageManager proxy open could succeed without driving decrypt callbacks on device, so ExoPlayer got unusable bytes (“This media format can't play on this device.”).
+- **PDF unchanged**: proxy/memfd still via `EncryptedSeekableOpener` / `EncryptedPdfOpener`.
+- **Seek**: keep commit-on-release scrub + `seekSettling`; CBR seeking enabled (not AlwaysEnabled). EncryptedDataSource hardened (IOException wrapping, larger chunk cache) for moov/cues-at-end random-access decrypt.
+- **Errors**: `onPlayerError` logs `errorCode` / `message` (`Log.e`) while still showing a clear user message.
+- Still **no PiP**.
 
 ## What this release adds (v0.4.3 / versionCode 20)
 
-- **Video seek (root cause)**: Mp4Extractor does not use CBR seek maps. When `EncryptedDataSource` left the progressive SeekMap unseekable, ExoPlayer coerced every seek to 0 (audio still “worked” via `ConstantBitrateSeekMap`). Playback now prefers the same `StorageManager.openProxyFileDescriptor` decrypt-on-pread path as PDF, served to Media3 through `FileDataSource` on `file:///proc/self/fd/<fd>` so the extractor builds a normal sample-table SeekMap. Fallbacks: small memfd, then `EncryptedDataSource`. Removed `setConstantBitrateSeekingAlwaysEnabled(true)` (keep CBR-enabled only for audio without TOC).
-- **Handle lifetime**: `DecryptingPlayback.release()` closes the proxy PFD and wipes the DEK copy (also on lock / screen dispose). No durable plaintext `.mp4` on disk.
+- **Video seek (attempted)**: preferred StorageManager proxy FD + `FileDataSource` on `file:///proc/self/fd/<fd>` so Mp4Extractor could build a sample-table SeekMap; memfd then EncryptedDataSource fallbacks. Removed `setConstantBitrateSeekingAlwaysEnabled(true)`. **Regressed on device** — see v0.4.4.
+- **Handle lifetime**: `DecryptingPlayback.release()` closes the proxy PFD and wipes the DEK copy (also on lock / screen dispose).
 - **Scrub UI**: while `seekSettling`, discontinuity position 0 cannot overwrite a committed target > 0; clear settling on READY; commit-on-release scrub unchanged.
 - Still **no PiP**.
 
@@ -79,7 +87,7 @@ Offline encrypted personal workspace for Android. **v0.4.3** — video seek via 
 - 4-digit PIN setup / unlock / **change** (weak PINs rejected, progressive lockout on unlock)
 - VAULT1 chunked AES-256-GCM + PBKDF2-HMAC-SHA256 (210 000 iterations)
 - SAF multi-file import + **share-sheet import**; SAF export with confirmation
-- Image / Media3 decrypting playback (**proxy FD** for seekable video) / **secure PDF** (proxy/memfd)
+- Image / Media3 decrypting playback (**EncryptedDataSource**) / **secure PDF** (proxy/memfd)
 - Auto-lock on background; idle timer pauses during playback; SAF/share defer-lock
 - No `INTERNET` permission; `allowBackup=false`; screenshots allowed (no `FLAG_SECURE` until Phase 4)
 

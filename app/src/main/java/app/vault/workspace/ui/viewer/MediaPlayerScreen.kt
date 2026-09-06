@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.media.AudioManager
+import android.util.Log
 import android.view.HapticFeedbackConstants
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -177,6 +178,11 @@ fun MediaPlayerScreen(
                 }
 
                 override fun onPlayerError(e: PlaybackException) {
+                    Log.e(
+                        "VaultPlayer",
+                        "Playback error code=${e.errorCode} message=${e.message}",
+                        e,
+                    )
                     error = "This media format can't play on this device."
                 }
             })
