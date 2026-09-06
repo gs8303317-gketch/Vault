@@ -1,0 +1,218 @@
+package app.vault.workspace.ui.nav
+
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import app.vault.workspace.auth.AutoLockController
+import app.vault.workspace.auth.SessionManager
+import app.vault.workspace.data.VaultItem
+import app.vault.workspace.data.VaultRepository
+import app.vault.workspace.export.ExportController
+import app.vault.workspace.import.ImportController
+import app.vault.workspace.ui.library.LibraryScreen
+import app.vault.workspace.ui.settings.SettingsScreen
+import app.vault.workspace.ui.setup.FirstRunScreen
+import app.vault.workspace.ui.setup.SetupPinScreen
+import app.vault.workspace.ui.unlock.UnlockScreen
+import app.vault.workspace.ui.viewer.ViewerScreen
+import kotlinx.coroutines.launch
+
+object Routes {
+    const val FirstRun = "first_run"
+    const val SetupPin = "setup_pin"
+    const val Unlock = "unlock"
+    const val Library = "library"
+    const val Settings = "settings"
+    const val Viewer = "viewer/{id}"
+    fun viewer(id: String) = "viewer/$id"
+}
+
+@Composable
+fun VaultNav(
+    session: SessionManager,
+    repository: VaultRepository,
+    autoLock: AutoLockController,
+) {
+    val nav = rememberNavController()
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val sessionState by session.state.collectAsState()
+    val start = if (session.isSetupComplete) Routes.Unlock else Routes.FirstRun
+
+    var setupError by remember { mutableStateOf<String?>(null) }
+    var unlockError by remember { mutableStateOf<String?>(null) }
+    var lockoutMs by remember { mutableLongStateOf(0L) }
+    var importing by remember { mutableStateOf(false) }
+    var items by remember { mutableStateOf<List<VaultItem>>(emptyList()) }
+    var activePlayers by remember { mutableStateOf<List<ExoPlayer>>(emptyList()) }
+    var pendingExport by remember { mutableStateOf<VaultItem?>(null) }
+
+    val importController = remember { ImportController(repository) }
+    val exportController = remember { ExportController(repository) }
+
+    LaunchedEffect(sessionState) {
+        if (sessionState is SessionManager.SessionState.Unlocked) {
+            repository.observeLibrary().collect { items = it }
+        } else {
+            items = emptyList()
+            activePlayers.forEach { it.release() }
+            activePlayers = emptyList()
+            autoLock.setPlaybackActive(false)
+            if (session.isSetupComplete) {
+                nav.navigate(Routes.Unlock) {
+                    popUpTo(0) { inclusive = true }
+                }
+            }
+        }
+    }
+
+    androidx.compose.runtime.DisposableEffect(session) {
+        val listener: () -> Unit = {
+            activePlayers.forEach { it.release() }
+            activePlayers = emptyList()
+        }
+        session.addLockListener(listener)
+        onDispose { session.removeLockListener(listener) }
+    }
+
+    val openDocLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris: List<Uri> ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        scope.launch {
+            importing = true
+            try {
+                importController.importAll(uris)
+            } finally {
+                importing = false
+            }
+        }
+    }
+
+    val createDocLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("*/*"),
+    ) { uri: Uri? ->
+        val item = pendingExport ?: return@rememberLauncherForActivityResult
+        pendingExport = null
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            exportController.export(item.id, uri)
+        }
+    }
+
+    NavHost(navController = nav, startDestination = start) {
+        composable(Routes.FirstRun) {
+            FirstRunScreen(onContinue = { nav.navigate(Routes.SetupPin) })
+        }
+        composable(Routes.SetupPin) {
+            SetupPinScreen(
+                errorMessage = setupError,
+                onPinConfirmed = { pin ->
+                    scope.launch {
+                        val result = session.setup(pin)
+                        result.onSuccess {
+                            setupError = null
+                            nav.navigate(Routes.Library) {
+                                popUpTo(0) { inclusive = true }
+                            }
+                        }.onFailure {
+                            setupError = it.message ?: "Setup failed"
+                        }
+                    }
+                },
+            )
+        }
+        composable(Routes.Unlock) {
+            UnlockScreen(
+                lockedOutMs = lockoutMs,
+                errorMessage = unlockError,
+                onSubmitPin = { pin ->
+                    scope.launch {
+                        val result = session.unlock(pin)
+                        result.onSuccess {
+                            unlockError = null
+                            lockoutMs = 0
+                            nav.navigate(Routes.Library) {
+                                popUpTo(0) { inclusive = true }
+                            }
+                        }.onFailure { e ->
+                            when (e) {
+                                is SessionManager.LockedOutException -> {
+                                    lockoutMs = e.remainingMs
+                                    unlockError = null
+                                }
+                                is SessionManager.WrongPinException -> {
+                                    unlockError = "Wrong PIN"
+                                    lockoutMs = session.lockoutStore().remainingLockMs()
+                                }
+                                else -> unlockError = e.message ?: "Unlock failed"
+                            }
+                        }
+                    }
+                },
+            )
+        }
+        composable(Routes.Library) {
+            LibraryScreen(
+                items = items,
+                importing = importing,
+                onImport = {
+                    openDocLauncher.launch(arrayOf("*/*"))
+                },
+                onOpenItem = { item ->
+                    autoLock.bumpIdle()
+                    nav.navigate(Routes.viewer(item.id))
+                },
+                onSettings = { nav.navigate(Routes.Settings) },
+            )
+        }
+        composable(Routes.Settings) {
+            SettingsScreen(
+                onBack = { nav.popBackStack() },
+                onLockNow = {
+                    session.lock()
+                },
+            )
+        }
+        composable(
+            Routes.Viewer,
+            arguments = listOf(navArgument("id") { type = NavType.StringType }),
+        ) { entry ->
+            val id = entry.arguments?.getString("id") ?: return@composable
+            var item by remember { mutableStateOf<VaultItem?>(null) }
+            LaunchedEffect(id) {
+                item = repository.getItem(id)
+            }
+            val current = item
+            if (current != null) {
+                ViewerScreen(
+                    item = current,
+                    repository = repository,
+                    onBack = { nav.popBackStack() },
+                    onRequestExport = { vaultItem ->
+                        pendingExport = vaultItem
+                        createDocLauncher.launch(vaultItem.displayName)
+                    },
+                    onPlaybackActive = { active -> autoLock.setPlaybackActive(active) },
+                    onPlayerCreated = { p -> activePlayers = activePlayers + p },
+                )
+            }
+        }
+    }
+}
