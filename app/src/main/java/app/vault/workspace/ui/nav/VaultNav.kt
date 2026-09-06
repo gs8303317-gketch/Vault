@@ -161,7 +161,13 @@ fun VaultNav(
                                     unlockError = "Wrong PIN"
                                     lockoutMs = session.lockoutStore().remainingLockMs()
                                 }
-                                else -> unlockError = e.message ?: "Unlock failed"
+                                is SessionManager.CorruptHeaderException -> {
+                                    unlockError = null
+                                    nav.navigate(Routes.FirstRun) {
+                                        popUpTo(0) { inclusive = true }
+                                    }
+                                }
+                                else -> unlockError = "Unlock failed"
                             }
                         }
                     }

@@ -1,6 +1,6 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **Phase 0 (v0.1.0)** scaffold.
+Offline encrypted personal workspace for Android. **Phase 0 (v0.1.1)** scaffold.
 
 ## What works in Phase 0
 

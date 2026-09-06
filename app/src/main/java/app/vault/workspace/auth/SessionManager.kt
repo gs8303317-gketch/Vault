@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
+import java.io.FileOutputStream
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
@@ -20,8 +21,13 @@ class SessionManager(private val context: Context) {
     private var vmk: ByteArray? = null
     private val lockListeners = CopyOnWriteArrayList<() -> Unit>()
 
+    init {
+        // Empty/corrupt vault.hdr from a bad write must not trap the user on Unlock.
+        discardCorruptHeader()
+    }
+
     val isSetupComplete: Boolean
-        get() = headerFile().exists()
+        get() = readValidHeader() != null
 
     fun lockoutStore(): LockoutStore = lockout
 
@@ -43,16 +49,7 @@ class SessionManager(private val context: Context) {
             try {
                 val wrapped = KeyHierarchy.wrapVmk(kek, newVmk)
                 val encoded = KeyHierarchy.encodeVaultHeader(salt, KeyHierarchy.PBKDF2_ITERS, wrapped)
-                val hdr = headerFile()
-                hdr.parentFile?.mkdirs()
-                val part = File(tmpDir(), "vault.hdr.part")
-                part.writeBytes(encoded)
-                part.outputStream().use { it.fd.sync() }
-                if (hdr.exists()) hdr.delete()
-                if (!part.renameTo(hdr)) {
-                    part.copyTo(hdr, overwrite = true)
-                    part.delete()
-                }
+                writeHeaderAtomic(encoded)
                 vmk = newVmk.copyOf()
                 KeyHierarchy.wipe(newVmk)
                 lockout.recordSuccess()
@@ -68,7 +65,9 @@ class SessionManager(private val context: Context) {
     }
 
     fun unlock(pin: String): Result<Unit> {
-        if (!isSetupComplete) return Result.failure(IllegalStateException("Not set up"))
+        if (!isSetupComplete) {
+            return Result.failure(CorruptHeaderException())
+        }
         if (!PinRules.isExactFourDigits(pin)) {
             return Result.failure(IllegalArgumentException("Invalid PIN"))
         }
@@ -76,8 +75,8 @@ class SessionManager(private val context: Context) {
             return Result.failure(LockedOutException(lockout.remainingLockMs()))
         }
         return try {
-            val raw = headerFile().readBytes()
-            val hdr = KeyHierarchy.decodeVaultHeader(raw)
+            val hdr = readValidHeader()
+                ?: return Result.failure(CorruptHeaderException())
             val kek = KeyHierarchy.deriveKek(pin.toCharArray(), hdr.salt, hdr.iterations)
             try {
                 val unlocked = KeyHierarchy.unwrapVmk(kek, hdr.wrappedVmk)
@@ -99,6 +98,8 @@ class SessionManager(private val context: Context) {
                 KeyHierarchy.wipe(kek)
             }
         } catch (e: LockedOutException) {
+            Result.failure(e)
+        } catch (e: CorruptHeaderException) {
             Result.failure(e)
         } catch (e: Exception) {
             Result.failure(e)
@@ -147,6 +148,53 @@ class SessionManager(private val context: Context) {
         headerFile().parentFile?.mkdirs()
     }
 
+    /**
+     * Write vault.hdr via .part + sync + rename.
+     * Never open a second truncating OutputStream after writeBytes — that emptied the file
+     * and produced "vault.hdr too short" on unlock.
+     */
+    private fun writeHeaderAtomic(encoded: ByteArray) {
+        val hdr = headerFile()
+        hdr.parentFile?.mkdirs()
+        val part = File(hdr.parentFile, "vault.hdr.part")
+        FileOutputStream(part).use { out ->
+            out.write(encoded)
+            out.flush()
+            out.fd.sync()
+        }
+        if (hdr.exists() && !hdr.delete()) {
+            throw IllegalStateException("Could not replace vault.hdr")
+        }
+        if (!part.renameTo(hdr)) {
+            part.copyTo(hdr, overwrite = true)
+            part.delete()
+        }
+        // Sanity: never leave an empty header claiming setup is done
+        if (hdr.length() < 28L) {
+            hdr.delete()
+            throw IllegalStateException("vault.hdr write failed")
+        }
+    }
+
+    private fun readValidHeader(): KeyHierarchy.VaultHeaderFile? {
+        val f = headerFile()
+        if (!f.exists() || f.length() == 0L) return null
+        return try {
+            KeyHierarchy.decodeVaultHeader(f.readBytes())
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun discardCorruptHeader() {
+        val f = headerFile()
+        if (!f.exists()) return
+        if (readValidHeader() == null) {
+            f.delete()
+            File(f.parentFile, "vault.hdr.part").delete()
+        }
+    }
+
     sealed class SessionState {
         data object Locked : SessionState()
         data object Unlocked : SessionState()
@@ -154,4 +202,5 @@ class SessionManager(private val context: Context) {
 
     class WrongPinException(val attempts: Int) : Exception("Wrong PIN")
     class LockedOutException(val remainingMs: Long) : Exception("Locked out")
+    class CorruptHeaderException : Exception("Vault header missing or corrupt")
 }
