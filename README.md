@@ -1,8 +1,14 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **Phase 1 continuation (v0.2.1)** — Info sheet, immersive media viewer, favorites, trash, and multi-select on top of the Phase 1 library UX.
+Offline encrypted personal workspace for Android. **Phase 1 continuation (v0.2.2)** — Info sheet, immersive media viewer, favorites, trash, and multi-select on top of the Phase 1 library UX.
 
-## What this release adds (v0.2.1 / versionCode 5)
+## What this release adds (v0.2.2 / versionCode 6)
+
+- **PDF fix**: render onto opaque white bitmap + white page card (no dark/blue unreadable pages); pinch-zoom; sharper scale; PDF library thumbs on import
+- **Auto-lock idle** presets in Settings (background still locks immediately)
+
+### Also in 0.2.1
+
 
 - **Info sheet**: Viewer overflow → Info opens a Material3 bottom sheet (name, category, MIME, human size, created date, file id, thumbnail yes/no)
 - **Immersive IMAGE/VIDEO viewer**: black full-bleed background; top bar overlays content (no Scaffold padding letterboxing); tap image to toggle chrome; auto-hide chrome after ~3s while video plays; ExoPlayer `RESIZE_MODE_FIT` + keep-screen-on

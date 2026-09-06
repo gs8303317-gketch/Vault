@@ -24,7 +24,7 @@ class VaultApp : Application() {
         // Wipe leftover tmp (.part, pdf cache) on every cold start
         session.wipeTmp()
         repository = VaultRepository(this, session)
-        autoLock = AutoLockController(session, appScope)
+        autoLock = AutoLockController(session, appScope, this)
         autoLock.start()
         session.addLockListener {
             // Players stopped by UI listeners; ensure tmp wiped

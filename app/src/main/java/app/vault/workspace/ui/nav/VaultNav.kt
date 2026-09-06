@@ -67,6 +67,7 @@ fun VaultNav(
     val nav = rememberNavController()
     val scope = rememberCoroutineScope()
     val sessionState by session.state.collectAsState()
+    val idleTimeoutMs by autoLock.idleTimeoutMsFlow.collectAsState()
     val start = if (session.isSetupComplete) Routes.Unlock else Routes.FirstRun
 
     var setupError by remember { mutableStateOf<String?>(null) }
@@ -265,6 +266,8 @@ fun VaultNav(
                     session.lock()
                 },
                 onOpenTrash = { nav.navigate(Routes.Trash) },
+                idleTimeoutMs = idleTimeoutMs,
+                onIdleTimeoutSelected = { autoLock.setIdleTimeoutMs(it) },
             )
         }
         composable(Routes.Trash) {

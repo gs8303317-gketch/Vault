@@ -8,6 +8,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -15,13 +17,22 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.vault.workspace.BuildConfig
+import app.vault.workspace.auth.AutoLockController
+import app.vault.workspace.ui.theme.VaultAccent
 import app.vault.workspace.ui.theme.VaultBg
 import app.vault.workspace.ui.theme.VaultDanger
 import app.vault.workspace.ui.theme.VaultTextMuted
@@ -32,7 +43,13 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onLockNow: () -> Unit,
     onOpenTrash: () -> Unit,
+    idleTimeoutMs: Long,
+    onIdleTimeoutSelected: (Long) -> Unit,
 ) {
+    var showIdlePicker by remember { mutableStateOf(false) }
+    val idleLabel = AutoLockController.PRESETS.firstOrNull { it.first == idleTimeoutMs }?.second
+        ?: "${idleTimeoutMs / 1000}s"
+
     Scaffold(
         containerColor = VaultBg,
         topBar = {
@@ -57,6 +74,27 @@ fun SettingsScreen(
                 supportingContent = {
                     Text("${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
                 },
+            )
+            HorizontalDivider()
+            ListItem(
+                headlineContent = { Text("Auto-lock") },
+                supportingContent = {
+                    Text(
+                        "Lock after $idleLabel idle. App still locks immediately in background.",
+                        color = VaultTextMuted,
+                    )
+                },
+                leadingContent = {
+                    Icon(Icons.Default.Timer, contentDescription = null, tint = VaultAccent)
+                },
+                trailingContent = {
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = VaultTextMuted,
+                    )
+                },
+                modifier = Modifier.clickable { showIdlePicker = true },
             )
             HorizontalDivider()
             ListItem(
@@ -105,5 +143,38 @@ fun SettingsScreen(
                 Text("Lock now")
             }
         }
+    }
+
+    if (showIdlePicker) {
+        AlertDialog(
+            onDismissRequest = { showIdlePicker = false },
+            title = { Text("Auto-lock idle time") },
+            text = {
+                Column {
+                    AutoLockController.PRESETS.forEach { (ms, label) ->
+                        ListItem(
+                            headlineContent = { Text(label) },
+                            leadingContent = {
+                                RadioButton(
+                                    selected = idleTimeoutMs == ms,
+                                    onClick = {
+                                        onIdleTimeoutSelected(ms)
+                                        showIdlePicker = false
+                                    },
+                                    colors = RadioButtonDefaults.colors(selectedColor = VaultAccent),
+                                )
+                            },
+                            modifier = Modifier.clickable {
+                                onIdleTimeoutSelected(ms)
+                                showIdlePicker = false
+                            },
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showIdlePicker = false }) { Text("Close") }
+            },
+        )
     }
 }

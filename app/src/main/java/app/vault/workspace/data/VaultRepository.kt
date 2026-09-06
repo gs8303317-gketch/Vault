@@ -2,6 +2,9 @@ package app.vault.workspace.data
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Color as AndroidColor
+import android.graphics.pdf.PdfRenderer
+import android.os.ParcelFileDescriptor
 import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
 import android.media.MediaMetadataRetriever
@@ -127,6 +130,11 @@ class VaultRepository(
                             createVideoThumb(uri, id, dek)
                         }.getOrDefault(false)
                     }
+                    mime.equals("application/pdf", ignoreCase = true) -> {
+                        hasThumb = runCatching {
+                            createPdfThumb(uri, id, dek)
+                        }.getOrDefault(false)
+                    }
                 }
                 KeyHierarchy.wipe(dek)
 
@@ -197,6 +205,34 @@ class VaultRepository(
             false
         } finally {
             runCatching { retriever.release() }
+        }
+    }
+
+    private fun createPdfThumb(uri: Uri, id: String, dek: ByteArray): Boolean {
+        val staging = File(session.tmpDir(), "$id.pdfthumb")
+        return try {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(staging).use { out -> input.copyTo(out) }
+            } ?: return false
+            val pfd = ParcelFileDescriptor.open(staging, ParcelFileDescriptor.MODE_READ_ONLY)
+            pfd.use { descriptor ->
+                PdfRenderer(descriptor).use { renderer ->
+                    if (renderer.pageCount < 1) return false
+                    renderer.openPage(0).use { page ->
+                        val scale = 512f / maxOf(page.width, page.height).coerceAtLeast(1)
+                        val w = (page.width * scale).toInt().coerceAtLeast(1)
+                        val h = (page.height * scale).toInt().coerceAtLeast(1)
+                        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                        bmp.eraseColor(AndroidColor.WHITE)
+                        page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                        encryptThumbBitmap(bmp, id, dek)
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            false
+        } finally {
+            staging.delete()
         }
     }
 
