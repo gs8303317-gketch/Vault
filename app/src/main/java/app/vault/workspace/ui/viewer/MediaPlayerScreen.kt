@@ -170,44 +170,18 @@ fun MediaPlayerScreen(
 
     LaunchedEffect(vatFile, itemId, mimeType) {
         try {
-            // Heavy work on IO; ExoPlayer must be created on main (Media3 thread check).
-            val isVideo = mimeType.startsWith("video/", ignoreCase = true)
-            val session = if (isVideo) {
-                val cacheFile = withContext(Dispatchers.IO) {
-                    val dek = loadDek()
-                    try {
-                        PlayerFactory.prepareVideoCacheFile(
-                            context = context,
-                            vatFile = vatFile,
-                            dek = dek,
-                            mimeType = mimeType,
-                            itemKey = itemId,
-                        )
-                    } finally {
-                        KeyHierarchy.wipe(dek)
-                    }
-                }
+            // Load DEK on IO; ExoPlayer must be created on main (Media3 thread check).
+            val dek = withContext(Dispatchers.IO) { loadDek() }
+            val session = try {
                 PlayerFactory.createDecryptingPlayer(
                     context = context,
                     vatFile = vatFile,
-                    dek = ByteArray(0),
+                    dek = dek,
                     mimeType = mimeType,
                     itemKey = itemId,
-                    preparedVideoFile = cacheFile,
                 )
-            } else {
-                val dek = withContext(Dispatchers.IO) { loadDek() }
-                try {
-                    PlayerFactory.createDecryptingPlayer(
-                        context = context,
-                        vatFile = vatFile,
-                        dek = dek,
-                        mimeType = mimeType,
-                        itemKey = itemId,
-                    )
-                } finally {
-                    KeyHierarchy.wipe(dek)
-                }
+            } finally {
+                KeyHierarchy.wipe(dek)
             }
             val p = session.player
             p.addListener(object : Player.Listener {

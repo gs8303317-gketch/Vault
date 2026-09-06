@@ -217,7 +217,7 @@ class SessionManager(private val context: Context) {
     }
 
     fun wipeTmp() {
-        // Session video plaintext play-cache (cacheDir/playcache)
+        // Leftover v0.4.6/0.4.7 play-cache dirs (playback no longer writes these)
         try {
             PlaybackPlaintextCache.wipeAll(context)
         } catch (_: Exception) {

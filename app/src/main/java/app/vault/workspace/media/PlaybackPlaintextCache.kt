@@ -9,9 +9,10 @@ import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Session plaintext play-cache for video. Decrypt once to a real file under
- * [Context.getCacheDir]/playcache so ExoPlayer [FileDataSource] gets a real SeekMap.
- * Reused across opens in the same unlock session; wiped on vault lock / cold start.
+ * Legacy session plaintext play-cache (v0.4.6–0.4.7 video path). Playback no longer
+ * writes these files — seek uses [SeekableFallbackExtractorsFactory] + streaming
+ * [EncryptedDataSource]. [wipeAll] remains so leftover caches are purged on lock /
+ * cold start via [app.vault.workspace.auth.SessionManager.wipeTmp].
  */
 object PlaybackPlaintextCache {
     private const val DIR_NAME = "playcache"

@@ -1,6 +1,15 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.4.7** — video seek via session plaintext play-cache (wiped on lock); audio stays stream-decrypt.
+Offline encrypted personal workspace for Android. **v0.4.8** — streaming decrypt for all media; CBR SeekMap fallback for unseekable WEB-DL; play-cache removed from playback path.
+
+## What this release adds (v0.4.8 / versionCode 25)
+
+- **Seek root cause**: ExoPlayer forces seek to **0** when `SeekMap.isSeekable()` is false. Typical WEB-DL fragmented MP4 lacks a usable seek table (no sidx / no mfra) — even a decrypted plaintext play-cache stayed unseekable (matches device report) and only added decrypt delay.
+- **CBR fallback**: `SeekableFallbackExtractorsFactory` wraps `DefaultExtractorsFactory`; unseekable SeekMaps with known duration + plaintext length are replaced by `ConstantBitrateSeekMap` (bitrate from size/duration). Passes through seekable maps unchanged. Inner factory keeps `setConstantBitrateSeekingEnabled(true)`.
+- **Instant play restored**: `PlayerFactory` uses `EncryptedDataSource` / `EncryptedDataSourceFactory` for **all** media (audio + video). Removed video play-cache / `FileDataSource` / `prepareVideoCacheFile` from the playback path. `PlaybackPlaintextCache.wipeAll` still runs in `SessionManager.wipeTmp` to clear leftovers from 0.4.6/0.4.7.
+- **MediaItem**: omit `setMimeType` so extractors sniff (WEB-DL may be mkv labeled mp4).
+- **Threading**: DEK load on IO; ExoPlayer still created on **main** (0.4.7 fix kept).
+- **UI**: commit-on-release scrub + `seekSettling` unchanged. Still **no PiP**.
 
 ## What this release adds (v0.4.7 / versionCode 24)
 
@@ -106,7 +115,7 @@ Offline encrypted personal workspace for Android. **v0.4.7** — video seek via 
 - 4-digit PIN setup / unlock / **change** (weak PINs rejected, progressive lockout on unlock)
 - VAULT1 chunked AES-256-GCM + PBKDF2-HMAC-SHA256 (210 000 iterations)
 - SAF multi-file import + **share-sheet import**; SAF export with confirmation
-- Image / Media3 decrypting playback (**video**: session plaintext play-cache + FileDataSource; **audio**: EncryptedDataSource; Media3 1.11) / **secure PDF** (proxy/memfd)
+- Image / Media3 decrypting playback (**audio + video**: EncryptedDataSource + CBR SeekMap fallback for unseekable WEB-DL; Media3 1.11) / **secure PDF** (proxy/memfd)
 - Auto-lock on background; idle timer pauses during playback; SAF/share defer-lock
 - No `INTERNET` permission; `allowBackup=false`; screenshots allowed (no `FLAG_SECURE` until Phase 4)
 

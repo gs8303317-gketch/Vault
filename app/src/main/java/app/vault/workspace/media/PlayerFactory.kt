@@ -4,22 +4,24 @@ import android.content.Context
 import android.net.Uri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
-import androidx.media3.datasource.FileDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
-import androidx.media3.extractor.DefaultExtractorsFactory
 import app.vault.workspace.crypto.KeyHierarchy
+import app.vault.workspace.crypto.VaultCrypto
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * ExoPlayer plus optional cleanup (e.g. wipe DEK copy for streaming audio).
- * Video play-cache files are session-scoped and wiped on lock — not deleted here.
+ * ExoPlayer plus optional cleanup (wipe DEK copy for streaming decrypt).
  * [release] is idempotent.
  *
  * Callers must create/use the player on the **main** thread (Media3 requirement).
- * Heavy decrypt belongs on a background thread via [prepareVideoCacheFile] first.
+ * Load the DEK on a background thread first; do not create ExoPlayer on IO.
+ *
+ * All media (audio + video) uses [EncryptedDataSource] / streaming decrypt — no
+ * play-cache on the playback path. Unseekable SeekMaps (typical WEB-DL fMP4) are
+ * replaced via [SeekableFallbackExtractorsFactory].
  */
 class DecryptingPlayback(
     val player: ExoPlayer,
@@ -42,37 +44,19 @@ class DecryptingPlayback(
 
 object PlayerFactory {
     /**
-     * IO-only: decrypt video into session play-cache. Does not touch ExoPlayer.
+     * **Main thread only.** Builds ExoPlayer with streaming [EncryptedDataSource]
+     * for both audio and video. Does not write play-cache files.
+     *
+     * [mimeType] / [itemKey] are kept for call-site compatibility. Mime is **not**
+     * set on [MediaItem] — extractors sniff the container (WEB-DL may be mkv labeled mp4).
      */
-    fun prepareVideoCacheFile(
-        context: Context,
-        vatFile: File,
-        dek: ByteArray,
-        mimeType: String,
-        itemKey: String? = null,
-    ): File {
-        val key = itemKey?.takeIf { it.isNotBlank() } ?: vatFile.name
-        return PlaybackPlaintextCache.getOrCreate(
-            context = context.applicationContext,
-            itemKey = key,
-            vatFile = vatFile,
-            dek = dek,
-            mimeType = mimeType,
-        )
-    }
-
-    /**
-     * **Main thread only.** Builds ExoPlayer.
-     * Video: pass [preparedVideoFile] from [prepareVideoCacheFile].
-     * Audio: pass [vatFile]+[dek]; streams via [EncryptedDataSource].
-     */
+    @Suppress("UNUSED_PARAMETER")
     fun createDecryptingPlayer(
         context: Context,
         vatFile: File,
         dek: ByteArray,
         mimeType: String,
         itemKey: String? = null,
-        preparedVideoFile: File? = null,
     ): DecryptingPlayback {
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
@@ -83,71 +67,14 @@ object PlayerFactory {
             )
             .build()
 
-        val extractorsFactory = DefaultExtractorsFactory()
-            .setConstantBitrateSeekingEnabled(true)
+        val plaintextSize = VaultCrypto.readHeader(vatFile).plaintextSize
+        val extractorsFactory = SeekableFallbackExtractorsFactory(
+            knownContentLength = plaintextSize,
+        )
 
         val appCtx = context.applicationContext
-        val isVideo = mimeType.startsWith("video/", ignoreCase = true)
-
-        return if (isVideo) {
-            val cacheFile = preparedVideoFile
-                ?: prepareVideoCacheFile(appCtx, vatFile, dek, mimeType, itemKey)
-            buildFileCachePlayer(
-                context = appCtx,
-                cacheFile = cacheFile,
-                mimeType = mimeType,
-                loadControl = loadControl,
-                extractorsFactory = extractorsFactory,
-            )
-        } else {
-            buildEncryptedDataSourcePlayer(
-                context = appCtx,
-                vatFile = vatFile,
-                dek = dek,
-                mimeType = mimeType,
-                loadControl = loadControl,
-                extractorsFactory = extractorsFactory,
-            )
-        }
-    }
-
-    private fun buildFileCachePlayer(
-        context: Context,
-        cacheFile: File,
-        mimeType: String,
-        loadControl: DefaultLoadControl,
-        extractorsFactory: DefaultExtractorsFactory,
-    ): DecryptingPlayback {
-        val player = ExoPlayer.Builder(context)
-            .setLoadControl(loadControl)
-            .setSeekBackIncrementMs(10_000)
-            .setSeekForwardIncrementMs(10_000)
-            .build()
-        player.repeatMode = Player.REPEAT_MODE_OFF
-
-        val factory = FileDataSource.Factory()
-        val mediaSource = ProgressiveMediaSource.Factory(factory, extractorsFactory)
-            .createMediaSource(
-                MediaItem.Builder()
-                    .setUri(Uri.fromFile(cacheFile))
-                    .setMimeType(mimeType)
-                    .build(),
-            )
-        player.setMediaSource(mediaSource)
-        player.prepare()
-        return DecryptingPlayback(player = player)
-    }
-
-    private fun buildEncryptedDataSourcePlayer(
-        context: Context,
-        vatFile: File,
-        dek: ByteArray,
-        mimeType: String,
-        loadControl: DefaultLoadControl,
-        extractorsFactory: DefaultExtractorsFactory,
-    ): DecryptingPlayback {
         val dekCopy = dek.copyOf()
-        val player = ExoPlayer.Builder(context)
+        val player = ExoPlayer.Builder(appCtx)
             .setLoadControl(loadControl)
             .setSeekBackIncrementMs(10_000)
             .setSeekForwardIncrementMs(10_000)
@@ -156,11 +83,11 @@ object PlayerFactory {
 
         val factory = EncryptedDataSourceFactory(vatFile, dekCopy)
         val playUri = Uri.parse("vaultenc:///play")
+        // Omit setMimeType — let extractors sniff (wrong container label mis-routes).
         val mediaSource = ProgressiveMediaSource.Factory(factory, extractorsFactory)
             .createMediaSource(
                 MediaItem.Builder()
                     .setUri(playUri)
-                    .setMimeType(mimeType)
                     .build(),
             )
         player.setMediaSource(mediaSource)
