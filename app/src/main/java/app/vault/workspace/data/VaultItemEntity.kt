@@ -16,6 +16,7 @@ data class VaultItemEntity(
     /** Wrapped DEK (nonce||ct||tag) under VMK. */
     val dekWrap: ByteArray,
     val hasThumb: Boolean = false,
+    val favorite: Boolean = false,
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
@@ -28,7 +29,8 @@ data class VaultItemEntity(
             createdAt == other.createdAt &&
             deletedAt == other.deletedAt &&
             dekWrap.contentEquals(other.dekWrap) &&
-            hasThumb == other.hasThumb
+            hasThumb == other.hasThumb &&
+            favorite == other.favorite
     }
 
     override fun hashCode(): Int {
@@ -41,6 +43,7 @@ data class VaultItemEntity(
         result = 31 * result + (deletedAt?.hashCode() ?: 0)
         result = 31 * result + dekWrap.contentHashCode()
         result = 31 * result + hasThumb.hashCode()
+        result = 31 * result + favorite.hashCode()
         return result
     }
 }

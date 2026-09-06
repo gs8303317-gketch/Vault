@@ -28,6 +28,7 @@ import app.vault.workspace.ui.library.LibraryScreen
 import app.vault.workspace.ui.settings.SettingsScreen
 import app.vault.workspace.ui.setup.FirstRunScreen
 import app.vault.workspace.ui.setup.SetupPinScreen
+import app.vault.workspace.ui.trash.TrashScreen
 import app.vault.workspace.ui.unlock.UnlockScreen
 import app.vault.workspace.ui.viewer.ViewerScreen
 import kotlinx.coroutines.launch
@@ -38,6 +39,7 @@ object Routes {
     const val Unlock = "unlock"
     const val Library = "library"
     const val Settings = "settings"
+    const val Trash = "trash"
     const val Viewer = "viewer/{id}"
     fun viewer(id: String) = "viewer/$id"
 }
@@ -73,6 +75,7 @@ fun VaultNav(
     var importing by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var items by remember { mutableStateOf<List<VaultItem>>(emptyList()) }
+    var trashItems by remember { mutableStateOf<List<VaultItem>>(emptyList()) }
     var activePlayers by remember { mutableStateOf<List<ExoPlayer>>(emptyList()) }
     var pendingExport by remember { mutableStateOf<VaultItem?>(null) }
 
@@ -81,9 +84,15 @@ fun VaultNav(
 
     LaunchedEffect(sessionState) {
         if (sessionState is SessionManager.SessionState.Unlocked) {
-            repository.observeLibrary().collect { items = it }
+            launch {
+                repository.observeLibrary().collect { items = it }
+            }
+            launch {
+                repository.observeTrashItems().collect { trashItems = it }
+            }
         } else {
             items = emptyList()
+            trashItems = emptyList()
             activePlayers.forEach { it.release() }
             activePlayers = emptyList()
             autoLock.setPlaybackActive(false)
@@ -231,6 +240,21 @@ fun VaultNav(
                     nav.navigate(Routes.viewer(item.id))
                 },
                 onSettings = { nav.navigate(Routes.Settings) },
+                onToggleFavorite = { item ->
+                    scope.launch {
+                        repository.setFavorite(item.id, !item.favorite)
+                    }
+                },
+                onMoveToTrash = { ids ->
+                    scope.launch {
+                        ids.forEach { repository.moveToTrash(it) }
+                        statusMessage = if (ids.size == 1) {
+                            "Moved to trash"
+                        } else {
+                            "Moved ${ids.size} items to trash"
+                        }
+                    }
+                },
                 onLoadThumb = { id -> repository.loadThumbBitmap(id) },
             )
         }
@@ -240,6 +264,33 @@ fun VaultNav(
                 onLockNow = {
                     session.lock()
                 },
+                onOpenTrash = { nav.navigate(Routes.Trash) },
+            )
+        }
+        composable(Routes.Trash) {
+            TrashScreen(
+                items = trashItems,
+                onBack = { nav.popBackStack() },
+                onRestore = { item ->
+                    scope.launch {
+                        repository.restoreFromTrash(item.id)
+                        statusMessage = "Restored ${item.displayName}"
+                    }
+                },
+                onDeleteForever = { item ->
+                    scope.launch {
+                        repository.hardDelete(item.id)
+                        statusMessage = "Deleted forever"
+                    }
+                },
+                onEmptyTrash = {
+                    scope.launch {
+                        val n = trashItems.size
+                        repository.emptyTrash()
+                        statusMessage = "Emptied trash ($n)"
+                    }
+                },
+                onLoadThumb = { id -> repository.loadThumbBitmap(id) },
             )
         }
         composable(
@@ -247,11 +298,15 @@ fun VaultNav(
             arguments = listOf(navArgument("id") { type = NavType.StringType }),
         ) { entry ->
             val id = entry.arguments?.getString("id") ?: return@composable
-            var item by remember { mutableStateOf<VaultItem?>(null) }
-            LaunchedEffect(id) {
-                item = repository.getItem(id)
+            // Prefer live library item so favorite toggles refresh; fall back to fetch
+            val fromLibrary = items.find { it.id == id }
+            var fetched by remember(id) { mutableStateOf<VaultItem?>(null) }
+            LaunchedEffect(id, fromLibrary) {
+                if (fromLibrary == null) {
+                    fetched = repository.getItem(id)
+                }
             }
-            val current = item
+            val current = fromLibrary ?: fetched
             if (current != null) {
                 ViewerScreen(
                     item = current,
@@ -261,6 +316,18 @@ fun VaultNav(
                         pendingExport = vaultItem
                         autoLock.setDeferBackgroundLock(true)
                         createDocLauncher.launch(vaultItem.displayName)
+                    },
+                    onToggleFavorite = { vaultItem ->
+                        scope.launch {
+                            repository.setFavorite(vaultItem.id, !vaultItem.favorite)
+                        }
+                    },
+                    onMoveToTrash = { vaultItem ->
+                        scope.launch {
+                            repository.moveToTrash(vaultItem.id)
+                            statusMessage = "Moved to trash"
+                            nav.popBackStack()
+                        }
                     },
                     onPlaybackActive = { active -> autoLock.setPlaybackActive(active) },
                     onPlayerCreated = { p -> activePlayers = activePlayers + p },

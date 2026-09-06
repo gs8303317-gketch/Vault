@@ -2,6 +2,7 @@ package app.vault.workspace.ui.viewer
 
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
@@ -15,11 +16,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import app.vault.workspace.media.PlayerFactory
 import app.vault.workspace.ui.theme.VaultAccent
@@ -68,9 +71,14 @@ fun MediaPlayerScreen(
         }
     }
 
-    Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    Box(
+        modifier
+            .fillMaxSize()
+            .background(Color.Black),
+        contentAlignment = Alignment.Center,
+    ) {
         when {
-            error != null -> Text(error!!)
+            error != null -> Text(error!!, color = Color.White)
             player == null -> CircularProgressIndicator(color = VaultAccent)
             else -> {
                 AndroidView(
@@ -81,10 +89,17 @@ fun MediaPlayerScreen(
                                 ViewGroup.LayoutParams.MATCH_PARENT,
                             )
                             useController = true
+                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                            keepScreenOn = true
                             this.player = player
                         }
                     },
-                    update = { it.player = player },
+                    update = { view ->
+                        view.player = player
+                        view.keepScreenOn = true
+                        view.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        view.useController = true
+                    },
                     modifier = Modifier.fillMaxSize(),
                 )
             }

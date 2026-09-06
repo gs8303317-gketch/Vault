@@ -28,6 +28,8 @@ data class VaultItem(
     val category: VaultCategory,
     val createdAt: Long,
     val hasThumb: Boolean,
+    val favorite: Boolean = false,
+    val deletedAt: Long? = null,
 )
 
 class VaultRepository(
@@ -35,40 +37,40 @@ class VaultRepository(
     private val session: SessionManager,
     private val dao: VaultItemDao = VaultDatabase.get(context).vaultItemDao(),
 ) {
+    private fun mapEntity(entity: VaultItemEntity, vmk: ByteArray): VaultItem? =
+        try {
+            VaultItem(
+                id = entity.id,
+                displayName = NameCipher.decrypt(vmk, entity.nameCipher),
+                mimeType = entity.mimeType,
+                sizeBytes = entity.sizeBytes,
+                category = runCatching { VaultCategory.valueOf(entity.category) }
+                    .getOrDefault(VaultCategory.OTHER),
+                createdAt = entity.createdAt,
+                hasThumb = entity.hasThumb,
+                favorite = entity.favorite,
+                deletedAt = entity.deletedAt,
+            )
+        } catch (_: Exception) {
+            null
+        }
+
     fun observeLibrary(): Flow<List<VaultItem>> =
         dao.observeAll().map { list ->
             val vmk = session.peekVmk() ?: return@map emptyList()
-            list.mapNotNull { entity ->
-                try {
-                    VaultItem(
-                        id = entity.id,
-                        displayName = NameCipher.decrypt(vmk, entity.nameCipher),
-                        mimeType = entity.mimeType,
-                        sizeBytes = entity.sizeBytes,
-                        category = runCatching { VaultCategory.valueOf(entity.category) }
-                            .getOrDefault(VaultCategory.OTHER),
-                        createdAt = entity.createdAt,
-                        hasThumb = entity.hasThumb,
-                    )
-                } catch (_: Exception) {
-                    null
-                }
-            }
+            list.mapNotNull { mapEntity(it, vmk) }
+        }
+
+    fun observeTrashItems(): Flow<List<VaultItem>> =
+        dao.observeTrash().map { list ->
+            val vmk = session.peekVmk() ?: return@map emptyList()
+            list.mapNotNull { mapEntity(it, vmk) }
         }
 
     suspend fun getItem(id: String): VaultItem? = withContext(Dispatchers.IO) {
         val entity = dao.getById(id) ?: return@withContext null
         val vmk = session.requireVmk()
-        VaultItem(
-            id = entity.id,
-            displayName = NameCipher.decrypt(vmk, entity.nameCipher),
-            mimeType = entity.mimeType,
-            sizeBytes = entity.sizeBytes,
-            category = runCatching { VaultCategory.valueOf(entity.category) }
-                .getOrDefault(VaultCategory.OTHER),
-            createdAt = entity.createdAt,
-            hasThumb = entity.hasThumb,
-        )
+        mapEntity(entity, vmk)
     }
 
     fun blobFile(id: String): File = File(session.blobsDir(), "$id.vat")
@@ -99,7 +101,6 @@ class VaultRepository(
                         sizeHint to h
                     } ?: return@withContext Result.failure(IllegalStateException("Cannot open $uri"))
                 } else {
-                    // Fallback: copy to private temp, then encrypt
                     val staging = File(tmp, "$id.staging")
                     cr.openInputStream(uri)?.use { input ->
                         FileOutputStream(staging).use { output -> input.copyTo(output) }
@@ -138,6 +139,7 @@ class VaultRepository(
                     createdAt = System.currentTimeMillis(),
                     dekWrap = wrappedDek,
                     hasThumb = hasThumb,
+                    favorite = false,
                 )
                 dao.insert(entity)
                 Result.success(
@@ -149,6 +151,7 @@ class VaultRepository(
                         category = VaultCategory.fromMime(mime),
                         createdAt = entity.createdAt,
                         hasThumb = hasThumb,
+                        favorite = false,
                     ),
                 )
             } catch (e: Exception) {
@@ -292,11 +295,37 @@ class VaultRepository(
         }
     }
 
-    suspend fun deleteItem(id: String) = withContext(Dispatchers.IO) {
+    suspend fun setFavorite(id: String, favorite: Boolean) = withContext(Dispatchers.IO) {
+        dao.setFavorite(id, favorite)
+    }
+
+    suspend fun moveToTrash(id: String) = withContext(Dispatchers.IO) {
+        dao.softDelete(id, System.currentTimeMillis())
+    }
+
+    suspend fun restoreFromTrash(id: String) = withContext(Dispatchers.IO) {
+        dao.restore(id)
+    }
+
+    /** Permanent delete of one item (blob + thumb + row). */
+    suspend fun hardDelete(id: String) = withContext(Dispatchers.IO) {
         dao.hardDelete(id)
         blobFile(id).delete()
         thumbFile(id).delete()
     }
+
+    /** Permanently delete all soft-deleted items. */
+    suspend fun emptyTrash() = withContext(Dispatchers.IO) {
+        val ids = dao.listTrashIds()
+        for (id in ids) {
+            dao.hardDelete(id)
+            blobFile(id).delete()
+            thumbFile(id).delete()
+        }
+    }
+
+    @Deprecated("Use hardDelete or moveToTrash", ReplaceWith("hardDelete(id)"))
+    suspend fun deleteItem(id: String) = hardDelete(id)
 
     private fun queryDisplayName(uri: Uri): String? {
         context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
