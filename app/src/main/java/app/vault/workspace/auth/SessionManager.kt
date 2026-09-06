@@ -140,6 +140,68 @@ class SessionManager(private val context: Context) {
 
     fun peekVmk(): ByteArray? = vmk?.copyOf()
 
+    /**
+     * Re-wrap VMK under a new PIN-derived KEK. Clears biometric wrap (must re-enable).
+     * Session stays unlocked; intermediates wiped.
+     */
+    fun changePin(currentPin: String, newPin: String): Result<Unit> {
+        if (_state.value !is SessionState.Unlocked || vmk == null) {
+            return Result.failure(IllegalStateException("Vault is locked"))
+        }
+        if (!PinRules.isExactFourDigits(currentPin)) {
+            return Result.failure(IllegalArgumentException("Current PIN invalid"))
+        }
+        PinRules.validateNewPin(newPin)?.let {
+            return Result.failure(IllegalArgumentException(it))
+        }
+        if (currentPin == newPin) {
+            return Result.failure(IllegalArgumentException("New PIN must be different"))
+        }
+        return try {
+            val hdr = readValidHeader()
+                ?: return Result.failure(CorruptHeaderException())
+            val oldKek = KeyHierarchy.deriveKek(currentPin.toCharArray(), hdr.salt, hdr.iterations)
+            try {
+                // Verify current PIN by unwrapping; must match session VMK
+                val check = KeyHierarchy.unwrapVmk(oldKek, hdr.wrappedVmk)
+                val match = check.contentEquals(vmk)
+                KeyHierarchy.wipe(check)
+                if (!match) {
+                    return Result.failure(WrongPinException(0))
+                }
+            } catch (e: Exception) {
+                return Result.failure(WrongPinException(0))
+            } finally {
+                KeyHierarchy.wipe(oldKek)
+            }
+
+            val newSalt = KeyHierarchy.generateSalt()
+            val newKek = KeyHierarchy.deriveKek(newPin.toCharArray(), newSalt)
+            try {
+                val sessionVmk = vmk ?: return Result.failure(IllegalStateException("Vault is locked"))
+                val wrapped = KeyHierarchy.wrapVmk(newKek, sessionVmk)
+                val encoded = KeyHierarchy.encodeVaultHeader(
+                    newSalt,
+                    KeyHierarchy.PBKDF2_ITERS,
+                    wrapped,
+                )
+                writeHeaderAtomic(encoded)
+            } finally {
+                KeyHierarchy.wipe(newKek)
+            }
+
+            // Safest: clear bio wrap so old biometric blob cannot unlock with stale assumption
+            try {
+                BiometricVault.disable(context)
+            } catch (_: Exception) {
+            }
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     fun lock() {
         KeyHierarchy.wipe(vmk)
         vmk = null
@@ -156,6 +218,15 @@ class SessionManager(private val context: Context) {
     fun wipeTmp() {
         val dir = tmpDir()
         if (!dir.exists()) return
+        // Belt-and-suspenders: purge any leftover plaintext PDF caches first
+        dir.listFiles()?.forEach { f ->
+            if (f.isFile && f.name.endsWith(".pdf", ignoreCase = true)) {
+                try {
+                    f.delete()
+                } catch (_: Exception) {
+                }
+            }
+        }
         dir.listFiles()?.forEach { f ->
             try {
                 if (f.isDirectory) f.deleteRecursively() else f.delete()

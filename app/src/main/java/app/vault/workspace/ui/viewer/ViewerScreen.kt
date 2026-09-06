@@ -183,8 +183,7 @@ fun ViewerScreen(
                     when {
                         item.mimeType.equals("application/pdf", ignoreCase = true) -> {
                             PdfViewer(
-                                openTempPdf = { repository.decryptToTempPdf(item.id) },
-                                onCloseCleanup = { f -> f?.delete() },
+                                openPdfHandle = { repository.openPdfHandle(item.id) },
                                 modifier = mod,
                             )
                         }

@@ -14,6 +14,8 @@ import android.provider.OpenableColumns
 import app.vault.workspace.auth.SessionManager
 import app.vault.workspace.crypto.KeyHierarchy
 import app.vault.workspace.crypto.VaultCrypto
+import app.vault.workspace.media.EncryptedPdfHandle
+import app.vault.workspace.media.EncryptedPdfOpener
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -391,6 +393,28 @@ class VaultRepository(
         }
     }
 
+    /**
+     * Open a seekable PDF without a durable plaintext temp when possible
+     * (proxy FD / memfd). Caller must [EncryptedPdfHandle.releaseResources]
+     * after PdfRenderer.close().
+     */
+    suspend fun openPdfHandle(id: String): EncryptedPdfHandle =
+        withContext(Dispatchers.IO) {
+            val dek = unwrapDek(id)
+            try {
+                EncryptedPdfOpener.open(
+                    context = context,
+                    vatFile = blobFile(id),
+                    dek = dek,
+                    tmpDir = session.tmpDir(),
+                    tempFileName = "$id.pdf",
+                )
+            } finally {
+                KeyHierarchy.wipe(dek)
+            }
+        }
+
+    /** @deprecated Viewing uses [openPdfHandle]; kept only for emergency tooling. */
     suspend fun decryptToTempPdf(id: String): File = withContext(Dispatchers.IO) {
         val dek = unwrapDek(id)
         try {

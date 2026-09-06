@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Storage
@@ -29,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,8 +59,20 @@ fun SettingsScreen(
     onBiometricToggle: (Boolean) -> Unit = {},
     biometricError: String? = null,
     storageUsedBytes: Long = 0L,
+    onChangePin: (current: String, newPin: String) -> Unit = { _, _ -> },
+    changePinError: String? = null,
+    changePinBusy: Boolean = false,
+    changePinSuccessEpoch: Int = 0,
+    onClearChangePinError: () -> Unit = {},
 ) {
     var showIdlePicker by remember { mutableStateOf(false) }
+    var showChangePin by remember { mutableStateOf(false) }
+    LaunchedEffect(changePinSuccessEpoch) {
+        if (changePinSuccessEpoch > 0) {
+            showChangePin = false
+            onClearChangePinError()
+        }
+    }
     val idleLabel = AutoLockController.PRESETS.firstOrNull { it.first == idleTimeoutMs }?.second
         ?: "${idleTimeoutMs / 1000}s"
 
@@ -120,6 +134,30 @@ fun SettingsScreen(
                     )
                 },
                 modifier = Modifier.clickable { showIdlePicker = true },
+            )
+            HorizontalDivider()
+            ListItem(
+                headlineContent = { Text("Change PIN") },
+                supportingContent = {
+                    Text(
+                        "Re-wrap vault key with a new PIN. Biometric unlock turns off.",
+                        color = VaultTextMuted,
+                    )
+                },
+                leadingContent = {
+                    Icon(Icons.Default.Lock, contentDescription = null, tint = VaultAccent)
+                },
+                trailingContent = {
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = VaultTextMuted,
+                    )
+                },
+                modifier = Modifier.clickable {
+                    onClearChangePinError()
+                    showChangePin = true
+                },
             )
             HorizontalDivider()
             if (biometricHardwareAvailable) {
@@ -240,6 +278,20 @@ fun SettingsScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showIdlePicker = false }) { Text("Close") }
+            },
+        )
+    }
+
+    if (showChangePin) {
+        ChangePinDialog(
+            errorMessage = changePinError,
+            busy = changePinBusy,
+            onDismiss = {
+                showChangePin = false
+                onClearChangePinError()
+            },
+            onSubmit = { current, newPin ->
+                onChangePin(current, newPin)
             },
         )
     }

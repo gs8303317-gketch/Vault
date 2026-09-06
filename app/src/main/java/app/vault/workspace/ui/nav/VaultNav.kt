@@ -80,6 +80,8 @@ fun VaultNav(
     session: SessionManager,
     repository: VaultRepository,
     autoLock: AutoLockController,
+    pendingShareUris: List<Uri> = emptyList(),
+    onShareConsumed: () -> Unit = {},
 ) {
     val nav = rememberNavController()
     val scope = rememberCoroutineScope()
@@ -104,6 +106,9 @@ fun VaultNav(
     var biometricEnabled by remember { mutableStateOf(BiometricVault.isEnabled(context)) }
     var biometricError by remember { mutableStateOf<String?>(null) }
     var storageUsedBytes by remember { mutableLongStateOf(0L) }
+    var changePinError by remember { mutableStateOf<String?>(null) }
+    var changePinBusy by remember { mutableStateOf(false) }
+    var changePinSuccessEpoch by remember { mutableStateOf(0) }
     val biometricHardware = remember {
         BiometricVault.isBiometricAvailable(context)
     }
@@ -159,6 +164,58 @@ fun VaultNav(
         }
         session.addLockListener(listener)
         onDispose { session.removeLockListener(listener) }
+    }
+
+    // Share-into-vault: queue URIs under a stable job id so clearing the activity
+    // pending list does not cancel the import coroutine.
+    var shareJobId by remember { mutableStateOf(0) }
+    var shareUrisForJob by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    LaunchedEffect(pendingShareUris) {
+        if (pendingShareUris.isNotEmpty()) {
+            shareUrisForJob = pendingShareUris.toList()
+            shareJobId += 1
+            onShareConsumed()
+            autoLock.setDeferBackgroundLock(true)
+        }
+    }
+    LaunchedEffect(shareJobId, sessionState) {
+        if (shareJobId == 0) return@LaunchedEffect
+        val uris = shareUrisForJob
+        if (uris.isEmpty()) return@LaunchedEffect
+        autoLock.setDeferBackgroundLock(true)
+        if (sessionState !is SessionManager.SessionState.Unlocked) {
+            return@LaunchedEffect
+        }
+        importing = true
+        statusMessage = "Importing shared file(s)…"
+        try {
+            val result = importController.importAll(uris)
+            shareUrisForJob = emptyList()
+            val folderId = currentFolderId
+            if (folderId != null) {
+                result.succeeded.forEach { item ->
+                    repository.setItemFolder(item.id, folderId)
+                }
+            }
+            statusMessage = when {
+                result.failures.isEmpty() ->
+                    "Imported ${result.succeeded.size} shared file(s)"
+                result.succeeded.isEmpty() ->
+                    "Share import failed: ${result.failures.firstOrNull()?.second ?: "unknown"}"
+                else ->
+                    "Imported ${result.succeeded.size}, failed ${result.failures.size}"
+            }
+            nav.navigate(Routes.Library) {
+                launchSingleTop = true
+            }
+        } catch (e: Exception) {
+            statusMessage = "Share import failed: ${e.message ?: "error"}"
+            shareUrisForJob = emptyList()
+        } finally {
+            importing = false
+            autoLock.setDeferBackgroundLock(false)
+            autoLock.bumpIdle()
+        }
     }
 
     fun promptBiometricUnlock() {
@@ -603,6 +660,29 @@ fun VaultNav(
                 },
                 biometricError = biometricError,
                 storageUsedBytes = storageUsedBytes,
+                changePinError = changePinError,
+                changePinBusy = changePinBusy,
+                changePinSuccessEpoch = changePinSuccessEpoch,
+                onClearChangePinError = { changePinError = null },
+                onChangePin = { current, newPin ->
+                    scope.launch {
+                        changePinBusy = true
+                        changePinError = null
+                        val result = session.changePin(current, newPin)
+                        changePinBusy = false
+                        result.onSuccess {
+                            biometricEnabled = false
+                            changePinSuccessEpoch += 1
+                            statusMessage =
+                                "PIN changed. Biometric unlock was turned off — re-enable in Settings if desired."
+                        }.onFailure { e ->
+                            changePinError = when (e) {
+                                is SessionManager.WrongPinException -> "Wrong current PIN"
+                                else -> e.message ?: "Could not change PIN"
+                            }
+                        }
+                    }
+                },
             )
         }
         composable(Routes.Trash) {
