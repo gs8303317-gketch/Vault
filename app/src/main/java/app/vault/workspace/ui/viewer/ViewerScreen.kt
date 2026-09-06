@@ -50,7 +50,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.media3.exoplayer.ExoPlayer
+import app.vault.workspace.media.DecryptingPlayback
 import app.vault.workspace.data.VaultCategory
 import app.vault.workspace.data.VaultItem
 import app.vault.workspace.data.VaultRepository
@@ -76,7 +76,7 @@ fun ViewerScreen(
     onMoveToTrash: (VaultItem) -> Unit,
     onMoveToFolder: (VaultItem) -> Unit = {},
     onPlaybackActive: (Boolean) -> Unit,
-    onPlayerCreated: (ExoPlayer) -> Unit,
+    onPlayerCreated: (DecryptingPlayback) -> Unit,
     onPreviousMedia: (() -> Unit)? = null,
     onNextMedia: (() -> Unit)? = null,
 ) {

@@ -95,6 +95,7 @@ import app.vault.workspace.media.PlaybackPositionStore
 import app.vault.workspace.media.SelectableTrack
 import app.vault.workspace.media.applyTrackOverride
 import app.vault.workspace.media.collectSelectableTracks
+import app.vault.workspace.media.DecryptingPlayback
 import app.vault.workspace.media.PlayerFactory
 import app.vault.workspace.ui.theme.VaultAccent
 import app.vault.workspace.ui.theme.VaultBg
@@ -150,7 +151,7 @@ fun MediaPlayerScreen(
     loadDek: suspend () -> ByteArray,
     mimeType: String,
     onPlaybackActive: (Boolean) -> Unit,
-    onPlayerCreated: (ExoPlayer) -> Unit,
+    onPlayerCreated: (DecryptingPlayback) -> Unit,
     modifier: Modifier = Modifier,
     title: String? = null,
     itemId: String? = null,
@@ -161,13 +162,15 @@ fun MediaPlayerScreen(
 ) {
     val isAudio = mimeType.startsWith("audio/", ignoreCase = true)
     val context = LocalContext.current
-    var player by remember { mutableStateOf<ExoPlayer?>(null) }
+    var playback by remember { mutableStateOf<DecryptingPlayback?>(null) }
+    val player = playback?.player
     var error by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(vatFile) {
         try {
             val dek = withContext(Dispatchers.IO) { loadDek() }
-            val p = PlayerFactory.createDecryptingPlayer(context, vatFile, dek, mimeType)
+            val session = PlayerFactory.createDecryptingPlayer(context, vatFile, dek, mimeType)
+            val p = session.player
             p.addListener(object : Player.Listener {
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
                     onPlaybackActive(isPlaying)
@@ -178,8 +181,8 @@ fun MediaPlayerScreen(
                 }
             })
             p.playWhenReady = true
-            player = p
-            onPlayerCreated(p)
+            playback = session
+            onPlayerCreated(session)
         } catch (e: Exception) {
             error = e.message ?: "Playback failed"
         }
@@ -188,8 +191,8 @@ fun MediaPlayerScreen(
     DisposableEffect(Unit) {
         onDispose {
             onPlaybackActive(false)
-            player?.release()
-            player = null
+            playback?.release()
+            playback = null
         }
     }
 
@@ -453,9 +456,13 @@ private fun PremiumPlayerOverlay(
                     reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT
                 ) {
                     // Seek landed (may still buffer). Keep UI on the committed target
-                    // until STATE_READY clears seekSettling.
+                    // until STATE_READY clears seekSettling. Never let a coerced
+                    // discontinuity at 0 wipe a committed target > 0 (unseekable map).
                     if (seekSettling) {
-                        positionMs = newPosition.positionMs.coerceAtLeast(0L)
+                        val landed = newPosition.positionMs.coerceAtLeast(0L)
+                        if (landed > 0L || positionMs <= 0L) {
+                            positionMs = landed
+                        }
                     }
                 }
             }

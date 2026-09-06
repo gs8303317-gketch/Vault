@@ -1,10 +1,17 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.4.2** — real video seek fix, library view/sort persistence.
+Offline encrypted personal workspace for Android. **v0.4.3** — video seek via proxy FD (Media3 sees a real seekable file).
+
+## What this release adds (v0.4.3 / versionCode 20)
+
+- **Video seek (root cause)**: Mp4Extractor does not use CBR seek maps. When `EncryptedDataSource` left the progressive SeekMap unseekable, ExoPlayer coerced every seek to 0 (audio still “worked” via `ConstantBitrateSeekMap`). Playback now prefers the same `StorageManager.openProxyFileDescriptor` decrypt-on-pread path as PDF, served to Media3 through `FileDataSource` on `file:///proc/self/fd/<fd>` so the extractor builds a normal sample-table SeekMap. Fallbacks: small memfd, then `EncryptedDataSource`. Removed `setConstantBitrateSeekingAlwaysEnabled(true)` (keep CBR-enabled only for audio without TOC).
+- **Handle lifetime**: `DecryptingPlayback.release()` closes the proxy PFD and wipes the DEK copy (also on lock / screen dispose). No durable plaintext `.mp4` on disk.
+- **Scrub UI**: while `seekSettling`, discontinuity position 0 cannot overwrite a committed target > 0; clear settling on READY; commit-on-release scrub unchanged.
+- Still **no PiP**.
 
 ## What this release adds (v0.4.2 / versionCode 19)
 
-- **Video seek (real fix)**: scrub/slider no longer live-`seekTo` on every drag tick (that flushed video to start). Seek commits on release; ±10s / resume use a settling guard so transient `currentPosition==0` cannot fight the target. EncryptedDataSource open/close hardened; ChunkCache + `VaultCrypto.decryptRange` random-access unit tests.
+- **Video seek (UI path)**: scrub/slider no longer live-`seekTo` on every drag tick. Seek commits on release; ±10s / resume use a settling guard. EncryptedDataSource open/close hardened; ChunkCache + `VaultCrypto.decryptRange` random-access unit tests.
 - **Library prefs**: Grid/Comfortable/List view mode and sort persist via SharedPreferences (survive exit/login), same pattern as playback resume positions.
 - Still **no PiP**.
 
@@ -72,7 +79,7 @@ Offline encrypted personal workspace for Android. **v0.4.2** — real video seek
 - 4-digit PIN setup / unlock / **change** (weak PINs rejected, progressive lockout on unlock)
 - VAULT1 chunked AES-256-GCM + PBKDF2-HMAC-SHA256 (210 000 iterations)
 - SAF multi-file import + **share-sheet import**; SAF export with confirmation
-- Image / Media3 decrypting playback / **secure PDF** (proxy/memfd)
+- Image / Media3 decrypting playback (**proxy FD** for seekable video) / **secure PDF** (proxy/memfd)
 - Auto-lock on background; idle timer pauses during playback; SAF/share defer-lock
 - No `INTERNET` permission; `allowBackup=false`; screenshots allowed (no `FLAG_SECURE` until Phase 4)
 

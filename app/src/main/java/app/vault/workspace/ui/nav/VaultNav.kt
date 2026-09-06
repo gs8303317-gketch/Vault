@@ -32,7 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
-import androidx.media3.exoplayer.ExoPlayer
+import app.vault.workspace.media.DecryptingPlayback
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -102,7 +102,7 @@ fun VaultNav(
     var folders by remember { mutableStateOf<List<VaultFolder>>(emptyList()) }
     var currentFolderId by remember { mutableStateOf<String?>(null) }
     var currentFolderName by remember { mutableStateOf<String?>(null) }
-    var activePlayers by remember { mutableStateOf<List<ExoPlayer>>(emptyList()) }
+    var activePlayers by remember { mutableStateOf<List<DecryptingPlayback>>(emptyList()) }
     var pendingExport by remember { mutableStateOf<VaultItem?>(null) }
     var moveItemIds by remember { mutableStateOf<List<String>?>(null) }
     var biometricEnabled by remember { mutableStateOf(BiometricVault.isEnabled(context)) }
