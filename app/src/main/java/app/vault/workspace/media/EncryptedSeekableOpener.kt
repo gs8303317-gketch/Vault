@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * deleted+wiped on [EncryptedSeekableHandle.releaseResources].
  *
  * Used by PDF ([EncryptedPdfOpener]). Media playback uses streaming
- * [EncryptedDataSource] only; Path B [VideoSeekPrepare] rewrites the vault blob (not this opener).
+ * [EncryptedDataSource] only (not this opener).
  */
 class EncryptedSeekableHandle(
     val pfd: ParcelFileDescriptor,

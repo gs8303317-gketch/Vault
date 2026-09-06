@@ -23,8 +23,8 @@ android {
         applicationId = "app.vault.workspace"
         minSdk = 26
         targetSdk = 35
-        versionCode = 29
-        versionName = "0.4.12"
+        versionCode = 30
+        versionName = "0.4.13"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "VERSION_NAME", "\"0.4.12\"")
         buildConfigField("int", "VERSION_CODE", "29")

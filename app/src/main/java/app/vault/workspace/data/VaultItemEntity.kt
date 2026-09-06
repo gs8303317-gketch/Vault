@@ -20,9 +20,8 @@ data class VaultItemEntity(
     /** Nullable folder membership; null = unfiled / root. */
     val folderId: String? = null,
     /**
-     * Progressive seek ready for ExoPlayer + EncryptedDataSource.
-     * Non-video defaults true. Video starts false until probe says already
-     * seekable or [app.vault.workspace.media.VideoSeekPrepare] finishes.
+     * Legacy flag from seek-prepare era. Kept for Room schema; UI ignores it
+     * and imports always store true. Player uses normal ExoPlayer seek.
      */
     val seekReady: Boolean = true,
 ) {

@@ -19,10 +19,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Callers must create/use the player on the **main** thread (Media3 requirement).
  * Load the DEK on a background thread first; do not create ExoPlayer on IO.
  *
- * Path A — all media plays only via [EncryptedDataSource] / streaming decrypt.
- * No remux, no full decrypt, no plaintext left on disk, no seek-time prepare.
- * Unseekable containers are repaired once in background by [VideoSeekPrepare]
- * (Path B), then the rewritten ciphertext is played again via Path A.
+ * All media plays only via [EncryptedDataSource] / streaming decrypt.
+ * No remux, no full decrypt, no plaintext left on disk, no seek prepare/indexing.
  */
 class DecryptingPlayback(
     val player: ExoPlayer,
@@ -46,7 +44,7 @@ class DecryptingPlayback(
 object PlayerFactory {
     /**
      * **Main thread only.** Builds ExoPlayer with streaming [EncryptedDataSource]
-     * for both audio and video. Does not write play-cache / remux files here.
+     * for both audio and video. Does not write play-cache / remux / seekprep files.
      *
      * [mimeType] / [itemKey] are kept for call-site compatibility. Mime is **not**
      * set on [MediaItem] — extractors sniff the container (WEB-DL may be mkv labeled mp4).

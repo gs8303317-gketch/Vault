@@ -16,10 +16,6 @@ import app.vault.workspace.crypto.KeyHierarchy
 import app.vault.workspace.crypto.VaultCrypto
 import app.vault.workspace.media.EncryptedPdfHandle
 import app.vault.workspace.media.EncryptedPdfOpener
-import app.vault.workspace.media.VideoSeekPrepare
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -47,7 +43,7 @@ data class VaultItem(
     val favorite: Boolean = false,
     val deletedAt: Long? = null,
     val folderId: String? = null,
-    /** False for video until Path B prepare finishes (or probe says already seekable). */
+    /** Legacy column; unused by player (always treated ready). */
     val seekReady: Boolean = true,
 )
 
@@ -57,9 +53,6 @@ class VaultRepository(
     private val dao: VaultItemDao = VaultDatabase.get(context).vaultItemDao(),
     private val folderDao: VaultFolderDao = VaultDatabase.get(context).vaultFolderDao(),
 ) {
-    /** Background scope for Path B video seek prepare (survives screen dispose). */
-    private val prepareScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
     private fun mapEntity(entity: VaultItemEntity, vmk: ByteArray): VaultItem? =
         try {
             VaultItem(
@@ -248,8 +241,6 @@ class VaultRepository(
                 }
                 KeyHierarchy.wipe(dek)
 
-                val isVideo = mime.startsWith("video/", ignoreCase = true)
-                val seekReady = !isVideo
                 val entity = VaultItemEntity(
                     id = id,
                     nameCipher = NameCipher.encrypt(vmk, name),
@@ -260,12 +251,9 @@ class VaultRepository(
                     dekWrap = wrappedDek,
                     hasThumb = hasThumb,
                     favorite = false,
-                    seekReady = seekReady,
+                    seekReady = true,
                 )
                 dao.insert(entity)
-                if (isVideo) {
-                    enqueueVideoSeekPrepare(id)
-                }
                 Result.success(
                     VaultItem(
                         id = id,
@@ -277,7 +265,7 @@ class VaultRepository(
                         hasThumb = hasThumb,
                         favorite = false,
                         folderId = null,
-                        seekReady = seekReady,
+                        seekReady = true,
                     ),
                 )
             } catch (e: Exception) {
@@ -502,85 +490,6 @@ class VaultRepository(
 
     @Deprecated("Use hardDelete or moveToTrash", ReplaceWith("hardDelete(id)"))
     suspend fun deleteItem(id: String) = hardDelete(id)
-
-    suspend fun setSeekReady(id: String, seekReady: Boolean) = withContext(Dispatchers.IO) {
-        dao.setSeekReady(id, seekReady)
-    }
-
-    /**
-     * Enqueue Path B prepare (import or first play). Idempotent per item via mutex.
-     * Never call from seek scrub.
-     */
-    fun enqueueVideoSeekPrepare(itemId: String) {
-        prepareScope.launch {
-            runVideoSeekPrepare(itemId)
-        }
-    }
-
-    /**
-     * Run Path B prepare and update [seekReady]. Returns true if seekReady is now true.
-     * If [VaultItemEntity.seekReady] is already true, verifies blob + size stamp before skipping.
-     */
-    suspend fun runVideoSeekPrepare(
-        itemId: String,
-        onProgress: ((Float) -> Unit)? = null,
-    ): Boolean = withContext(Dispatchers.IO) {
-        val entity = dao.getById(itemId) ?: return@withContext false
-        if (entity.seekReady) {
-            val vat = blobFile(itemId)
-            val stampOk = try {
-                vat.exists() &&
-                    SeekReadyStamp.matches(
-                        entity.sizeBytes,
-                        VaultCrypto.readHeader(vat).plaintextSize,
-                    )
-            } catch (_: Exception) {
-                false
-            }
-            if (stampOk) return@withContext true
-            // Stale / missing / header mismatch — clear flag and continue prepare.
-            dao.setSeekReady(itemId, false)
-        }
-        if (!entity.mimeType.startsWith("video/", ignoreCase = true)) {
-            dao.setSeekReady(itemId, true)
-            return@withContext true
-        }
-        val dek = KeyHierarchy.unwrapDek(session.requireVmk(), entity.dekWrap)
-        try {
-            when (
-                val outcome = VideoSeekPrepare.prepare(
-                    context = context.applicationContext,
-                    itemId = itemId,
-                    vatFile = blobFile(itemId),
-                    dek = dek,
-                    onProgress = onProgress,
-                )
-            ) {
-                VideoSeekPrepare.Outcome.AlreadyReady,
-                VideoSeekPrepare.Outcome.Rewritten,
-                -> {
-                    stampSeekReady(itemId)
-                    true
-                }
-                is VideoSeekPrepare.Outcome.Failed -> {
-                    android.util.Log.e("VaultRepo", "Video seek prepare failed: ${outcome.reason}")
-                    false
-                }
-            }
-        } finally {
-            KeyHierarchy.wipe(dek)
-        }
-    }
-
-    /** Align sizeBytes to VAULT1 plaintextSize and set seekReady=true. */
-    private suspend fun stampSeekReady(itemId: String) {
-        try {
-            val header = VaultCrypto.readHeader(blobFile(itemId))
-            dao.setSizeBytes(itemId, header.plaintextSize)
-        } catch (_: Exception) {
-        }
-        dao.setSeekReady(itemId, true)
-    }
 
     private fun queryDisplayName(uri: Uri): String? {
         context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)

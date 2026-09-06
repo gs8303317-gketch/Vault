@@ -1,6 +1,14 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.4.12** — seekReady stamp guard + known-good faststart MP4 encrypt/random-access regression; Path A/B architecture unchanged from v0.4.11.
+Offline encrypted personal workspace for Android. **v0.4.13** — removed seek indexing/prepare; lean EncryptedDataSource → ExoPlayer streaming player.
+
+## What this release adds (v0.4.13 / versionCode 30)
+
+- **Removed seek indexing/prepare**: no `VideoSeekPrepare`, `MediaContainerProbe`, `Mp4Faststart`, `SeekReadyStamp`, `VaultMediaDataSource`, or play-cache `getOrCreate` remux path.
+- **Lean player**: instant `EncryptedDataSource` → ExoPlayer (audio+video). No "Indexing video…" / "Enable seeking" chips; scrub always enabled (normal ExoPlayer seek — may be imperfect on WEB-DL).
+- **Import**: no background prepare enqueue; `seekReady` column kept (Room) but always stored `true` and ignored by UI.
+- **Wipe**: `PlaybackPlaintextCache.wipeAll` still clears legacy `playcache` + `seekprep` on lock.
+- Still **no PiP**. Kept Phase 1–3 player features (speed, lock, A–B, tracks, commit-on-release scrub, main-thread ExoPlayer).
 
 ## What this release adds (v0.4.12 / versionCode 29)
 

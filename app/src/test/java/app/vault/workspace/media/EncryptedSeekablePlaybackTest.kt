@@ -4,16 +4,14 @@ import app.vault.workspace.crypto.KeyHierarchy
 import app.vault.workspace.crypto.VaultCrypto
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 import java.io.RandomAccessFile
 
 /**
- * Locks Path A for known-good faststart MP4: probe says alreadySeekable,
- * encrypt once, then chunked GCM random-access decrypt matches plaintext
- * at head / mid / near-end — without Path B prepare/remux.
- * (No ExoPlayer on JVM — intentional.)
+ * Known-good faststart MP4 → encrypt once → chunked GCM random-access decrypt
+ * matches plaintext at head / mid / near-end (EncryptedDataSource path).
+ * No ExoPlayer on JVM — intentional.
  */
 class EncryptedSeekablePlaybackTest {
 
@@ -22,19 +20,12 @@ class EncryptedSeekablePlaybackTest {
             .also { it.mkdirs() }
 
     @Test
-    fun knownGoodFaststartMp4_encryptAndRandomAccess_withoutPrepare() {
+    fun knownGoodFaststartMp4_encryptAndRandomAccess() {
         val dir = tmpDir()
         try {
             val plainFile = File(dir, "faststart.mp4")
             FakeMp4.write(plainFile, moovBeforeMdat = true, withMoof = false)
             val plain = plainFile.readBytes()
-
-            val sniff = MediaContainerProbe.sniffFile(plainFile)
-            assertTrue("expected alreadySeekable", sniff.alreadySeekable)
-            assertEquals(
-                MediaContainerProbe.Kind.PROGRESSIVE_SEEKABLE_MP4,
-                sniff.kind,
-            )
 
             val vat = File(dir, "item.vat")
             val dek = KeyHierarchy.generateDek()
@@ -70,7 +61,6 @@ class EncryptedSeekablePlaybackTest {
                 }
             }
 
-            // Same pattern EncryptedDataSource uses via ChunkCache
             val cache = ChunkCache(maxEntries = 8)
             RandomAccessFile(vat, "r").use { raf ->
                 for ((pos, len) in windows) {

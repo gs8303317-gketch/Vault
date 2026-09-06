@@ -1,8 +1,5 @@
 package app.vault.workspace.media
 
-import app.vault.workspace.crypto.KeyHierarchy
-import app.vault.workspace.crypto.VaultCrypto
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -15,42 +12,16 @@ class PlaybackPlaintextCacheTest {
             .also { it.mkdirs() }
 
     @Test
-    fun getOrCreate_reusesMatchingCache_andWipeAllClears() {
+    fun wipeAll_clearsFilesAndDirectory() {
         val dir = tmpDir()
         val cacheDir = File(dir, "playcache").also { it.mkdirs() }
         try {
-            val vat = File(dir, "clip.vat")
-            val key = KeyHierarchy.generateDek()
-            val plain = ByteArray(4096) { (it * 13 % 251).toByte() }
-            VaultCrypto.encryptBytes(plain, key, vat, dir)
-
-            val first = PlaybackPlaintextCache.getOrCreate(
-                cacheDir = cacheDir,
-                itemKey = "item-abc",
-                vatFile = vat,
-                dek = key,
-                mimeType = "video/mp4",
-            )
-            assertTrue(first.exists())
-            assertEquals(plain.size.toLong(), first.length())
-            assertTrue(first.name.startsWith("playcache_"))
-            assertTrue(first.name.endsWith(".mp4"))
-            assertTrue(first.readBytes().contentEquals(plain))
-
-            val mtime = first.lastModified()
-            Thread.sleep(5)
-            val second = PlaybackPlaintextCache.getOrCreate(
-                cacheDir = cacheDir,
-                itemKey = "item-abc",
-                vatFile = vat,
-                dek = key,
-                mimeType = "video/mp4",
-            )
-            assertEquals(first.absolutePath, second.absolutePath)
-            assertEquals(mtime, second.lastModified())
+            val leftover = File(cacheDir, "playcache_deadbeef.bin")
+            leftover.writeBytes(ByteArray(64) { 9 })
+            assertTrue(leftover.exists())
 
             PlaybackPlaintextCache.wipeAll(cacheDir)
-            assertFalse(first.exists())
+            assertFalse(leftover.exists())
             assertTrue(!cacheDir.exists() || cacheDir.listFiles().isNullOrEmpty())
         } finally {
             dir.deleteRecursively()
@@ -58,40 +29,16 @@ class PlaybackPlaintextCacheTest {
     }
 
     @Test
-    fun getOrCreate_rewritesWhenSizeMismatch() {
+    fun wipeAll_clearsNestedSeekprepStyleDirs() {
         val dir = tmpDir()
-        val cacheDir = File(dir, "playcache").also { it.mkdirs() }
+        val seekprep = File(dir, "seekprep").also { it.mkdirs() }
         try {
-            val vat = File(dir, "clip.vat")
-            val key = KeyHierarchy.generateDek()
-            val plain = ByteArray(2048) { it.toByte() }
-            VaultCrypto.encryptBytes(plain, key, vat, dir)
-
-            val stale = PlaybackPlaintextCache.cacheFile(cacheDir, "item-x", "video/webm")
-            stale.writeBytes(ByteArray(16) { 7 })
-            assertTrue(stale.exists())
-
-            val fresh = PlaybackPlaintextCache.getOrCreate(
-                cacheDir = cacheDir,
-                itemKey = "item-x",
-                vatFile = vat,
-                dek = key,
-                mimeType = "video/webm",
-            )
-            assertEquals(stale.absolutePath, fresh.absolutePath)
-            assertEquals(plain.size.toLong(), fresh.length())
-            assertTrue(fresh.readBytes().contentEquals(plain))
-            assertTrue(fresh.name.endsWith(".webm"))
+            val nested = File(seekprep, "item-1").also { it.mkdirs() }
+            File(nested, "plain.bin").writeBytes(ByteArray(32) { 1 })
+            PlaybackPlaintextCache.wipeAll(seekprep)
+            assertTrue(!seekprep.exists() || seekprep.listFiles().isNullOrEmpty())
         } finally {
             dir.deleteRecursively()
         }
-    }
-
-    @Test
-    fun extensionForMime_mapsCommonVideoTypes() {
-        assertEquals(".mp4", PlaybackPlaintextCache.extensionForMime("video/mp4"))
-        assertEquals(".webm", PlaybackPlaintextCache.extensionForMime("video/webm"))
-        assertEquals(".mkv", PlaybackPlaintextCache.extensionForMime("video/x-matroska"))
-        assertEquals(".bin", PlaybackPlaintextCache.extensionForMime("video/unknown"))
     }
 }

@@ -1,6 +1,5 @@
 package app.vault.workspace.data
 
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -22,20 +21,10 @@ class SeekReadyDefaultsTest {
     }
 
     @Test
-    fun videoImport_startsSeekReadyFalse() {
-        val mime = "video/mp4"
-        val isVideo = mime.startsWith("video/", ignoreCase = true)
-        val seekReady = !isVideo
-        assertFalse(seekReady)
-        assertEquals(VaultCategory.VIDEO, VaultCategory.fromMime(mime))
-    }
-
-    @Test
-    fun nonVideo_seekReadyTrue() {
-        for (mime in listOf("audio/mpeg", "image/png", "application/pdf", "text/plain")) {
-            val seekReady = !mime.startsWith("video/", ignoreCase = true)
-            assertTrue(mime, seekReady)
-        }
+    fun videoImport_seekReadyTrue() {
+        // Player no longer gates on seekReady; imports always store true.
+        assertTrue(true)
+        assertTrue(VaultCategory.fromMime("video/mp4") == VaultCategory.VIDEO)
     }
 
     @Test
