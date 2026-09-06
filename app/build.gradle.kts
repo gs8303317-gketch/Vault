@@ -23,11 +23,11 @@ android {
         applicationId = "app.vault.workspace"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.3.1"
+        versionCode = 9
+        versionName = "0.3.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "VERSION_NAME", "\"0.3.1\"")
-        buildConfigField("int", "VERSION_CODE", "8")
+        buildConfigField("String", "VERSION_NAME", "\"0.3.2\"")
+        buildConfigField("int", "VERSION_CODE", "9")
     }
 
     signingConfigs {
@@ -111,6 +111,9 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.8.5")
 
     implementation("androidx.biometric:biometric:1.1.0")
+    // Win resolution over biometric→fragment:1.2.5 so ActivityResult requestCodes
+    // from activity 1.9.x (high 16 bits set) are accepted by FragmentActivity.
+    implementation("androidx.fragment:fragment-ktx:1.8.5")
 
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")

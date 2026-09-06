@@ -85,6 +85,7 @@ fun VaultNav(
     var moveItemIds by remember { mutableStateOf<List<String>?>(null) }
     var biometricEnabled by remember { mutableStateOf(BiometricVault.isEnabled(context)) }
     var biometricError by remember { mutableStateOf<String?>(null) }
+    var storageUsedBytes by remember { mutableLongStateOf(0L) }
     val biometricHardware = remember {
         BiometricVault.isBiometricAvailable(context)
     }
@@ -104,6 +105,9 @@ fun VaultNav(
             launch {
                 repository.observeFolders().collect { folders = it }
             }
+            launch {
+                repository.observeTotalStorageBytes().collect { storageUsedBytes = it }
+            }
             if (currentFolderId != null) {
                 currentFolderName = repository.getFolder(currentFolderId!!)?.name
             } else {
@@ -113,6 +117,7 @@ fun VaultNav(
             items = emptyList()
             trashItems = emptyList()
             folders = emptyList()
+            storageUsedBytes = 0L
             currentFolderId = null
             currentFolderName = null
             activePlayers.forEach { it.release() }
@@ -256,7 +261,7 @@ fun VaultNav(
     }
 
     val openDocLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetMultipleContents(),
+        ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris: List<Uri> ->
         autoLock.setDeferBackgroundLock(false)
         if (uris.isEmpty()) {
@@ -396,7 +401,8 @@ fun VaultNav(
                 onImport = {
                     autoLock.setDeferBackgroundLock(true)
                     try {
-                        openDocLauncher.launch("*/*")
+                        // OpenMultipleDocuments uses SAF; arrayOf("*/*") avoids OEM MIME-list quirks.
+                        openDocLauncher.launch(arrayOf("*/*"))
                     } catch (e: Exception) {
                         autoLock.setDeferBackgroundLock(false)
                         statusMessage = "Could not open file picker: ${e.message ?: "error"}"
@@ -462,6 +468,20 @@ fun VaultNav(
                         )
                     }
                 },
+                onRenameFolder = { folder, name ->
+                    scope.launch {
+                        val result = repository.renameFolder(folder.id, name)
+                        statusMessage = result.fold(
+                            onSuccess = {
+                                if (currentFolderId == folder.id) {
+                                    currentFolderName = name.trim()
+                                }
+                                "Renamed to “${name.trim()}”"
+                            },
+                            onFailure = { "Could not rename folder: ${it.message}" },
+                        )
+                    }
+                },
                 onDeleteFolder = { folder ->
                     scope.launch {
                         repository.deleteFolder(folder.id)
@@ -497,6 +517,7 @@ fun VaultNav(
                     }
                 },
                 biometricError = biometricError,
+                storageUsedBytes = storageUsedBytes,
             )
         }
         composable(Routes.Trash) {

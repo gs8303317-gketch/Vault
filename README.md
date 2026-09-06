@@ -1,12 +1,16 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.3.1** — crash fix for import FAB, folder back-nav, and thumbnail LRU cache on top of Phase 1 power features (folders + biometric unlock).
+Offline encrypted personal workspace for Android. **v0.3.2** — fragment requestCode import fix, folder rename, and vault storage meter on top of Phase 1.
 
-## What this release adds (v0.3.1 / versionCode 8)
+## What this release adds (v0.3.2 / versionCode 9)
 
-- **Import crash fix**: `+` FAB now uses `GetMultipleContents()` with `"*/*"` only (OEM pickers often crash on `OpenMultipleDocuments` + long MIME arrays including `*/*`). Launch wrapped in try/catch; SAF defer-background-lock kept around the picker.
-- **Folder back navigation**: Inside a folder, toolbar shows **Back** (ArrowBack) and system back clears the folder filter instead of leaving the vault / popping to Unlock. Opening a folder from Folders lands on Library with the filter applied.
-- **Thumbnail LRU cache**: In-memory cache (~64 entries) avoids re-decrypting thumbs while scrolling; cleared on session lock. No Room schema change — still **Room DB version 3** (destructive migration N/A for this bump).
+- **Import requestCode fix**: Explicit `androidx.fragment:fragment-ktx:1.8.5` wins over biometric’s transitive `fragment:1.2.5`, so `ActivityResultRegistry` requestCodes (high 16 bits set in activity 1.9.x) no longer trip `checkForValidRequestCode`. Import uses `OpenMultipleDocuments` + `arrayOf("*/*")`; defer-background-lock + try/catch kept.
+- **Folder rename**: Edit icon / long-press opens rename dialog; uses existing `VaultRepository.renameFolder` (no schema change).
+- **Storage meter**: Settings shows total vault storage (`SUM(sizeBytes)` library + trash) via `formatHumanSize`. Offline / no INTERNET. Still **Room DB version 3**.
+
+## Also in v0.3.1 / versionCode 8
+
+- **Import crash workaround** (superseded by 0.3.2 fragment bump): `GetMultipleContents()` + try/catch; folder back-nav; thumbnail LRU cache (~64 entries).
 
 ## Also in v0.3.0 / versionCode 7
 
@@ -33,11 +37,11 @@ Offline encrypted personal workspace for Android. **v0.3.1** — crash fix for i
 
 ## Not in this slice (later)
 
-Nested folders UI polish, bulk export, tablet two-pane, import cancel/resume, image editor, Office preview, cloud sync, calculator disguise, PIN recovery, proper Room migrations (non-destructive), FLAG_SECURE.
+Nested folders, bulk export, tablet two-pane, import cancel/resume, image editor, Office preview, cloud sync, calculator disguise, PIN recovery, proper Room migrations (non-destructive), FLAG_SECURE.
 
 ## Limitations (honest)
 
-- **Destructive DB migration on upgrade to v0.3.0**: Room schema wipe via `fallbackToDestructiveMigration` — early-app OK; re-import after upgrade if you had data on v0.2.x. **v0.3.1 keeps Room v3** — no schema change / no extra wipe for 0.3.0 → 0.3.1.
+- **Destructive DB migration on upgrade to v0.3.0**: Room schema wipe via `fallbackToDestructiveMigration` — early-app OK; re-import after upgrade if you had data on v0.2.x. **v0.3.1 / v0.3.2 keep Room v3** — no schema change / no extra wipe for 0.3.0 → 0.3.2.
 - Biometric wrap is invalidated if biometrics are re-enrolled on the device (`setInvalidatedByBiometricEnrollment`); re-enable from Settings after PIN unlock
 - Rooted / unlocked session can read vault memory and files
 - Screenshots of unlocked screens work (intentional for testing in P0–P3)

@@ -10,6 +10,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -35,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.vault.workspace.BuildConfig
+import app.vault.workspace.data.formatHumanSize
 import app.vault.workspace.auth.AutoLockController
 import app.vault.workspace.ui.theme.VaultAccent
 import app.vault.workspace.ui.theme.VaultBg
@@ -54,6 +56,7 @@ fun SettingsScreen(
     biometricEnabled: Boolean = false,
     onBiometricToggle: (Boolean) -> Unit = {},
     biometricError: String? = null,
+    storageUsedBytes: Long = 0L,
 ) {
     var showIdlePicker by remember { mutableStateOf(false) }
     val idleLabel = AutoLockController.PRESETS.firstOrNull { it.first == idleTimeoutMs }?.second
@@ -82,6 +85,19 @@ fun SettingsScreen(
                 headlineContent = { Text("Version") },
                 supportingContent = {
                     Text("${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+                },
+            )
+            HorizontalDivider()
+            ListItem(
+                headlineContent = { Text("Vault storage") },
+                supportingContent = {
+                    Text(
+                        "${formatHumanSize(storageUsedBytes)} encrypted (library + trash)",
+                        color = VaultTextMuted,
+                    )
+                },
+                leadingContent = {
+                    Icon(Icons.Default.Storage, contentDescription = null, tint = VaultAccent)
                 },
             )
             HorizontalDivider()

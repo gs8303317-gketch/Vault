@@ -159,6 +159,9 @@ class VaultRepository(
         }
     }
 
+    /** Sum of item sizeBytes (library + trash) — offline storage meter. */
+    fun observeTotalStorageBytes(): Flow<Long> = dao.observeTotalSizeBytes()
+
     fun observeTrashItems(): Flow<List<VaultItem>> =
         dao.observeTrash().map { list ->
             val vmk = session.peekVmk() ?: return@map emptyList()

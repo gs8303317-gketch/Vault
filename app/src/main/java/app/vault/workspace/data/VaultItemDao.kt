@@ -54,4 +54,8 @@ interface VaultItemDao {
 
     @Query("SELECT id FROM vault_items WHERE deletedAt IS NOT NULL")
     suspend fun listTrashIds(): List<String>
+
+    /** Total plaintext size of all vault items (library + trash). No schema change. */
+    @Query("SELECT COALESCE(SUM(sizeBytes), 0) FROM vault_items")
+    fun observeTotalSizeBytes(): Flow<Long>
 }

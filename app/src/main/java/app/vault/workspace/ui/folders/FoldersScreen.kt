@@ -1,10 +1,13 @@
 package app.vault.workspace.ui.folders
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -16,6 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -45,18 +49,21 @@ import app.vault.workspace.ui.theme.VaultDanger
 import app.vault.workspace.ui.theme.VaultOnAccent
 import app.vault.workspace.ui.theme.VaultTextMuted
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun FoldersScreen(
     folders: List<VaultFolder>,
     onBack: () -> Unit,
     onOpenFolder: (VaultFolder) -> Unit,
     onCreateFolder: (String) -> Unit,
+    onRenameFolder: (VaultFolder, String) -> Unit,
     onDeleteFolder: (VaultFolder) -> Unit,
 ) {
     var showCreate by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<VaultFolder?>(null) }
+    var pendingRename by remember { mutableStateOf<VaultFolder?>(null) }
     var newName by remember { mutableStateOf("") }
+    var renameName by remember { mutableStateOf("") }
 
     Scaffold(
         containerColor = VaultBg,
@@ -121,17 +128,37 @@ fun FoldersScreen(
                             Icon(Icons.Default.Folder, contentDescription = null, tint = VaultAccent)
                         },
                         trailingContent = {
-                            IconButton(onClick = { pendingDelete = folder }) {
-                                Icon(
-                                    Icons.Default.Delete,
-                                    contentDescription = "Delete folder",
-                                    tint = VaultDanger,
-                                )
+                            Row {
+                                IconButton(
+                                    onClick = {
+                                        renameName = folder.name
+                                        pendingRename = folder
+                                    },
+                                ) {
+                                    Icon(
+                                        Icons.Default.Edit,
+                                        contentDescription = "Rename folder",
+                                        tint = VaultAccent,
+                                    )
+                                }
+                                IconButton(onClick = { pendingDelete = folder }) {
+                                    Icon(
+                                        Icons.Default.Delete,
+                                        contentDescription = "Delete folder",
+                                        tint = VaultDanger,
+                                    )
+                                }
                             }
                         },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onOpenFolder(folder) },
+                            .combinedClickable(
+                                onClick = { onOpenFolder(folder) },
+                                onLongClick = {
+                                    renameName = folder.name
+                                    pendingRename = folder
+                                },
+                            ),
                     )
                 }
             }
@@ -164,6 +191,37 @@ fun FoldersScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showCreate = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+
+    pendingRename?.let { folder ->
+        AlertDialog(
+            onDismissRequest = { pendingRename = null },
+            title = { Text("Rename folder") },
+            text = {
+                OutlinedTextField(
+                    value = renameName,
+                    onValueChange = { renameName = it },
+                    singleLine = true,
+                    label = { Text("Name") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val n = renameName.trim()
+                        if (n.isNotEmpty()) {
+                            onRenameFolder(folder, n)
+                            pendingRename = null
+                        }
+                    },
+                ) { Text("Rename", color = VaultAccent) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRename = null }) { Text("Cancel") }
             },
         )
     }
