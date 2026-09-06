@@ -26,7 +26,7 @@ android {
         versionCode = 14
         versionName = "0.3.7"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "VERSION_NAME", "\"0.3.6\"")
+        buildConfigField("String", "VERSION_NAME", "\"0.3.7\"")
         buildConfigField("int", "VERSION_CODE", "14")
     }
 
