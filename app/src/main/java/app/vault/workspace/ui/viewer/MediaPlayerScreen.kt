@@ -37,6 +37,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.AspectRatio
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.BrightnessHigh
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Lock
@@ -83,6 +88,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import app.vault.workspace.media.PlaybackPositionStore
 import app.vault.workspace.media.PlayerFactory
 import app.vault.workspace.ui.theme.VaultAccent
 import app.vault.workspace.ui.theme.VaultBg
@@ -117,6 +123,10 @@ internal enum class VideoFitMode(val label: String, val resizeMode: Int) {
     ZOOM("Zoom", AspectRatioFrameLayout.RESIZE_MODE_ZOOM),
 }
 
+internal enum class LoopMode { OFF, ONE, AB }
+
+internal val SLEEP_TIMER_OPTIONS_MIN = intArrayOf(0, 5, 15, 30, 45, 60)
+
 /**
  * Premium offline player overlay on Media3 ExoPlayer (decrypting path unchanged).
  * Video: immersive black + brightness (left vertical) / volume (right vertical) /
@@ -137,8 +147,11 @@ fun MediaPlayerScreen(
     onPlayerCreated: (ExoPlayer) -> Unit,
     modifier: Modifier = Modifier,
     title: String? = null,
+    itemId: String? = null,
     onControlsVisibilityChanged: (Boolean) -> Unit = {},
     onGesturesLockedChanged: (Boolean) -> Unit = {},
+    onPrevious: (() -> Unit)? = null,
+    onNext: (() -> Unit)? = null,
 ) {
     val isAudio = mimeType.startsWith("audio/", ignoreCase = true)
     val context = LocalContext.current
@@ -188,8 +201,11 @@ fun MediaPlayerScreen(
                     player = player!!,
                     isAudio = isAudio,
                     title = title,
+                    itemId = itemId,
                     onControlsVisibilityChanged = onControlsVisibilityChanged,
                     onGesturesLockedChanged = onGesturesLockedChanged,
+                    onPrevious = onPrevious,
+                    onNext = onNext,
                 )
             }
         }
@@ -201,8 +217,11 @@ private fun PremiumPlayerOverlay(
     player: ExoPlayer,
     isAudio: Boolean,
     title: String?,
+    itemId: String?,
     onControlsVisibilityChanged: (Boolean) -> Unit,
     onGesturesLockedChanged: (Boolean) -> Unit,
+    onPrevious: (() -> Unit)?,
+    onNext: (() -> Unit)?,
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -210,6 +229,7 @@ private fun PremiumPlayerOverlay(
     val audioManager = remember(context) {
         context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     }
+    val positionStore = remember(context) { PlaybackPositionStore(context) }
 
     val originalScreenBrightness = remember(activity) {
         activity?.window?.attributes?.screenBrightness
@@ -266,6 +286,14 @@ private fun PremiumPlayerOverlay(
     var fitMenuOpen by remember { mutableStateOf(false) }
     var lockHintTick by remember { mutableIntStateOf(0) }
 
+    var loopMode by remember { mutableStateOf(LoopMode.OFF) }
+    var markerAMs by remember { mutableStateOf<Long?>(null) }
+    var markerBMs by remember { mutableStateOf<Long?>(null) }
+    var sleepRemainingMs by remember { mutableLongStateOf(0L) }
+    var sleepUntilEpochMs by remember { mutableLongStateOf(0L) }
+    var sleepMenuOpen by remember { mutableStateOf(false) }
+    var didResume by remember { mutableStateOf(false) }
+
     var brightness by remember {
         mutableFloatStateOf(
             activity?.window?.attributes?.screenBrightness
@@ -305,6 +333,7 @@ private fun PremiumPlayerOverlay(
 
     LaunchedEffect(player) {
         player.playbackParameters = PlaybackParameters(baseSpeed)
+        var saveTick = 0
         while (isActive) {
             if (!scrubbing) {
                 positionMs = player.currentPosition.coerceAtLeast(0L)
@@ -312,14 +341,94 @@ private fun PremiumPlayerOverlay(
             val d = player.duration
             durationMs = if (d > 0) d else 0L
             isPlaying = player.isPlaying
+
+            // A–B loop
+            val a = markerAMs
+            val b = markerBMs
+            if (loopMode == LoopMode.AB && a != null && b != null && b > a) {
+                val pos = player.currentPosition
+                if (pos >= b) {
+                    player.seekTo(a)
+                    positionMs = a
+                }
+            }
+
+            // Persist resume position ~every 2s
+            saveTick++
+            if (saveTick % 10 == 0 && itemId != null) {
+                positionStore.savePositionMs(itemId, player.currentPosition, durationMs)
+            }
             delay(200)
         }
     }
 
-    LaunchedEffect(controlsVisible, isPlaying, gesturesLocked, speedMenuOpen, fitMenuOpen) {
+    // Resume once duration is known
+    LaunchedEffect(durationMs, itemId) {
+        if (didResume || itemId == null || durationMs <= 0L) return@LaunchedEffect
+        val saved = positionStore.getPositionMs(itemId)
+        val resumeAt = PlaybackPositionStore.resumePosition(saved, durationMs)
+        if (resumeAt > 0L) {
+            player.seekTo(resumeAt)
+            positionMs = resumeAt
+        }
+        didResume = true
+    }
+
+    // Loop mode → ExoPlayer repeat
+    LaunchedEffect(loopMode) {
+        player.repeatMode = when (loopMode) {
+            LoopMode.ONE -> Player.REPEAT_MODE_ONE
+            else -> Player.REPEAT_MODE_OFF
+        }
+    }
+
+    // Sleep timer countdown (deadline-based so effect doesn't restart every tick)
+    LaunchedEffect(sleepUntilEpochMs) {
+        if (sleepUntilEpochMs <= 0L) {
+            sleepRemainingMs = 0L
+            return@LaunchedEffect
+        }
+        while (isActive) {
+            val left = (sleepUntilEpochMs - System.currentTimeMillis()).coerceAtLeast(0L)
+            sleepRemainingMs = left
+            if (left <= 0L) {
+                player.pause()
+                controlsVisible = true
+                sleepUntilEpochMs = 0L
+                break
+            }
+            delay(1_000)
+        }
+    }
+
+    // Auto-next when track ends (unless looping)
+    DisposableEffect(player, loopMode, onNext) {
+        val listener = object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_ENDED &&
+                    loopMode == LoopMode.OFF
+                ) {
+                    val id = itemId
+                    if (id != null) positionStore.clear(id)
+                    onNext?.invoke()
+                }
+            }
+        }
+        player.addListener(listener)
+        onDispose { player.removeListener(listener) }
+    }
+
+    DisposableEffect(itemId, player) {
+        onDispose {
+            val id = itemId ?: return@onDispose
+            positionStore.savePositionMs(id, player.currentPosition, player.duration.coerceAtLeast(0L))
+        }
+    }
+
+    LaunchedEffect(controlsVisible, isPlaying, gesturesLocked, speedMenuOpen, fitMenuOpen, sleepMenuOpen) {
         // Top title/chrome follows player controls only — stay hidden while locked.
         onControlsVisibilityChanged(controlsVisible && !gesturesLocked)
-        if (controlsVisible && isPlaying && !gesturesLocked && !speedMenuOpen && !fitMenuOpen) {
+        if (controlsVisible && isPlaying && !gesturesLocked && !speedMenuOpen && !fitMenuOpen && !sleepMenuOpen) {
             delay(CONTROLS_HIDE_MS)
             controlsVisible = false
         }
@@ -752,6 +861,19 @@ private fun PremiumPlayerOverlay(
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    if (onPrevious != null) {
+                        IconButton(onClick = {
+                            onPrevious.invoke()
+                            showControls()
+                        }) {
+                            Icon(
+                                Icons.Default.SkipPrevious,
+                                contentDescription = "Previous",
+                                tint = Color.White,
+                                modifier = Modifier.size(if (isAudio) 36.dp else 32.dp),
+                            )
+                        }
+                    }
                     IconButton(onClick = { seekBy(-SKIP_MS) }) {
                         Icon(
                             Icons.Default.Replay10,
@@ -760,7 +882,7 @@ private fun PremiumPlayerOverlay(
                             modifier = Modifier.size(if (isAudio) 36.dp else 32.dp),
                         )
                     }
-                    Spacer(Modifier.width(12.dp))
+                    Spacer(Modifier.width(8.dp))
                     IconButton(
                         onClick = { togglePlay() },
                         modifier = Modifier
@@ -774,7 +896,7 @@ private fun PremiumPlayerOverlay(
                             modifier = Modifier.size(if (isAudio) 40.dp else 32.dp),
                         )
                     }
-                    Spacer(Modifier.width(12.dp))
+                    Spacer(Modifier.width(8.dp))
                     IconButton(onClick = { seekBy(SKIP_MS) }) {
                         Icon(
                             Icons.Default.Forward10,
@@ -782,6 +904,19 @@ private fun PremiumPlayerOverlay(
                             tint = Color.White,
                             modifier = Modifier.size(if (isAudio) 36.dp else 32.dp),
                         )
+                    }
+                    if (onNext != null) {
+                        IconButton(onClick = {
+                            onNext.invoke()
+                            showControls()
+                        }) {
+                            Icon(
+                                Icons.Default.SkipNext,
+                                contentDescription = "Next",
+                                tint = Color.White,
+                                modifier = Modifier.size(if (isAudio) 36.dp else 32.dp),
+                            )
+                        }
                     }
                 }
 
@@ -888,6 +1023,117 @@ private fun PremiumPlayerOverlay(
                         }
                     }
 
+                    // Loop: Off → One → A–B
+                    IconButton(
+                        onClick = {
+                            loopMode = when (loopMode) {
+                                LoopMode.OFF -> LoopMode.ONE
+                                LoopMode.ONE -> {
+                                    if (markerAMs != null && markerBMs != null) LoopMode.AB
+                                    else LoopMode.OFF
+                                }
+                                LoopMode.AB -> LoopMode.OFF
+                            }
+                            view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                            showControls()
+                        },
+                    ) {
+                        Icon(
+                            when (loopMode) {
+                                LoopMode.ONE -> Icons.Default.RepeatOne
+                                else -> Icons.Default.Repeat
+                            },
+                            contentDescription = "Loop mode",
+                            tint = when (loopMode) {
+                                LoopMode.OFF -> VaultTextMuted
+                                else -> VaultAccent
+                            },
+                        )
+                    }
+
+                    // Set A / B markers for A–B loop
+                    TextButton(
+                        onClick = {
+                            markerAMs = player.currentPosition.coerceAtLeast(0L)
+                            val b = markerBMs
+                            if (b != null && b <= markerAMs!!) markerBMs = null
+                            view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                            showControls()
+                        },
+                    ) {
+                        Text(
+                            if (markerAMs != null) "A✓" else "A",
+                            color = if (markerAMs != null) VaultAccent else Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                        )
+                    }
+                    TextButton(
+                        onClick = {
+                            val pos = player.currentPosition.coerceAtLeast(0L)
+                            val a = markerAMs
+                            if (a != null && pos > a) {
+                                markerBMs = pos
+                                loopMode = LoopMode.AB
+                            } else if (a == null) {
+                                // Set A first at a slightly earlier point if missing
+                                markerAMs = (pos - 1_000L).coerceAtLeast(0L)
+                                markerBMs = pos
+                                loopMode = LoopMode.AB
+                            }
+                            view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                            showControls()
+                        },
+                    ) {
+                        Text(
+                            if (markerBMs != null) "B✓" else "B",
+                            color = if (markerBMs != null) VaultAccent else Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                        )
+                    }
+
+                    Box {
+                        IconButton(
+                            onClick = {
+                                sleepMenuOpen = true
+                                speedMenuOpen = false
+                                fitMenuOpen = false
+                                showControls()
+                            },
+                        ) {
+                            Icon(
+                                Icons.Default.Timer,
+                                contentDescription = "Sleep timer",
+                                tint = if (sleepRemainingMs > 0L) VaultAccent else VaultTextMuted,
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = sleepMenuOpen,
+                            onDismissRequest = { sleepMenuOpen = false },
+                        ) {
+                            SLEEP_TIMER_OPTIONS_MIN.forEach { mins ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            if (mins == 0) "Off" else "$mins min",
+                                            color = VaultText,
+                                        )
+                                    },
+                                    onClick = {
+                                        sleepUntilEpochMs = if (mins == 0) {
+                                            0L
+                                        } else {
+                                            System.currentTimeMillis() + mins * 60_000L
+                                        }
+                                        sleepMenuOpen = false
+                                        showControls()
+                                    },
+                                )
+                            }
+                        }
+                    }
+
                     IconButton(onClick = { toggleLock() }) {
                         Icon(
                             Icons.Default.LockOpen,
@@ -895,6 +1141,24 @@ private fun PremiumPlayerOverlay(
                             tint = VaultTextMuted,
                         )
                     }
+                }
+
+                if (sleepRemainingMs > 0L || (markerAMs != null && markerBMs != null)) {
+                    Text(
+                        buildString {
+                            if (sleepRemainingMs > 0L) {
+                                append("Sleep ${formatPlayerTime(sleepRemainingMs)}")
+                            }
+                            if (markerAMs != null && markerBMs != null) {
+                                if (isNotEmpty()) append(" · ")
+                                append("A–B ${formatPlayerTime(markerAMs!!)}–${formatPlayerTime(markerBMs!!)}")
+                                if (loopMode == LoopMode.AB) append(" looping")
+                            }
+                        },
+                        color = VaultTextMuted,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
                 }
             }
         }

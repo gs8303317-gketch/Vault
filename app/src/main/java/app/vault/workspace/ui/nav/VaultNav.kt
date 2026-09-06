@@ -43,6 +43,7 @@ import app.vault.workspace.auth.AutoLockController
 import app.vault.workspace.auth.BiometricVault
 import app.vault.workspace.auth.SessionManager
 import app.vault.workspace.data.VaultFolder
+import app.vault.workspace.data.VaultCategory
 import app.vault.workspace.data.VaultItem
 import app.vault.workspace.data.VaultRepository
 import app.vault.workspace.export.ExportController
@@ -736,6 +737,12 @@ fun VaultNav(
             }
             val current = fromLibrary ?: fetched
             if (current != null) {
+                val mediaQueue = items.filter {
+                    it.category == VaultCategory.VIDEO || it.category == VaultCategory.AUDIO
+                }
+                val mediaIndex = mediaQueue.indexOfFirst { it.id == current.id }
+                val prevMedia = mediaQueue.getOrNull(mediaIndex - 1)
+                val nextMedia = mediaQueue.getOrNull(mediaIndex + 1)
                 ViewerScreen(
                     item = current,
                     repository = repository,
@@ -762,6 +769,22 @@ fun VaultNav(
                     },
                     onPlaybackActive = { active -> autoLock.setPlaybackActive(active) },
                     onPlayerCreated = { p -> activePlayers = activePlayers + p },
+                    onPreviousMedia = prevMedia?.let { prev ->
+                        {
+                            nav.navigate(Routes.viewer(prev.id)) {
+                                popUpTo(Routes.viewer(current.id)) { inclusive = true }
+                                launchSingleTop = true
+                            }
+                        }
+                    },
+                    onNextMedia = nextMedia?.let { next ->
+                        {
+                            nav.navigate(Routes.viewer(next.id)) {
+                                popUpTo(Routes.viewer(current.id)) { inclusive = true }
+                                launchSingleTop = true
+                            }
+                        }
+                    },
                 )
             }
         }

@@ -77,6 +77,8 @@ fun ViewerScreen(
     onMoveToFolder: (VaultItem) -> Unit = {},
     onPlaybackActive: (Boolean) -> Unit,
     onPlayerCreated: (ExoPlayer) -> Unit,
+    onPreviousMedia: (() -> Unit)? = null,
+    onNextMedia: (() -> Unit)? = null,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     var showExportConfirm by remember { mutableStateOf(false) }
@@ -126,6 +128,7 @@ fun ViewerScreen(
                     loadDek = { repository.unwrapDek(item.id) },
                     mimeType = item.mimeType,
                     title = item.displayName,
+                    itemId = item.id,
                     onPlaybackActive = { active ->
                         videoPlaying = active
                         onPlaybackActive(active)
@@ -140,6 +143,8 @@ fun ViewerScreen(
                             menuOpen = false
                         }
                     },
+                    onPrevious = onPreviousMedia,
+                    onNext = onNextMedia,
                     modifier = Modifier.fillMaxSize(),
                 )
                 else -> {}
@@ -189,9 +194,12 @@ fun ViewerScreen(
                     loadDek = { repository.unwrapDek(item.id) },
                     mimeType = item.mimeType,
                     title = item.displayName,
+                    itemId = item.id,
                     onPlaybackActive = onPlaybackActive,
                     onPlayerCreated = onPlayerCreated,
                     onGesturesLockedChanged = { locked -> playerLocked = locked },
+                    onPrevious = onPreviousMedia,
+                    onNext = onNextMedia,
                     modifier = mod,
                 )
                 VaultCategory.DOCUMENT -> {

@@ -1,6 +1,10 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.3.8** — import progress, library sort, immersive player, seek fix.
+Offline encrypted personal workspace for Android. **v0.3.9** — Phase 2 player: A–B/loop, resume, sleep timer, next/prev.
+
+## What this release adds (v0.3.9 / versionCode 16)
+
+- **Phase 2 media player**: loop Off/One/A–B (set A/B markers), resume last position per file, sleep timer (5–60 min), previous/next in current library/folder queue (auto-next when a track ends).
 
 ## What this release adds (v0.3.8 / versionCode 15)
 
