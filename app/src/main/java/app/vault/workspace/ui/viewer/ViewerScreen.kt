@@ -87,9 +87,12 @@ fun ViewerScreen(
     val immersive = item.category == VaultCategory.IMAGE ||
         item.category == VaultCategory.VIDEO
 
-    // Auto-hide chrome while video is playing
-    LaunchedEffect(chromeVisible, videoPlaying, immersive) {
-        if (immersive && chromeVisible && videoPlaying) {
+    // Auto-hide chrome for images; video chrome follows MediaPlayer controls
+    LaunchedEffect(chromeVisible, videoPlaying, immersive, item.category) {
+        if (immersive &&
+            item.category == VaultCategory.IMAGE &&
+            chromeVisible
+        ) {
             delay(3000)
             chromeVisible = false
         }
@@ -115,13 +118,14 @@ fun ViewerScreen(
                     vatFile = repository.blobFile(item.id),
                     loadDek = { repository.unwrapDek(item.id) },
                     mimeType = item.mimeType,
+                    title = item.displayName,
                     onPlaybackActive = { active ->
                         videoPlaying = active
                         onPlaybackActive(active)
-                        // Show chrome briefly when playback pauses
                         if (!active) chromeVisible = true
                     },
                     onPlayerCreated = onPlayerCreated,
+                    onControlsVisibilityChanged = { visible -> chromeVisible = visible },
                     modifier = Modifier.fillMaxSize(),
                 )
                 else -> {}
@@ -170,6 +174,7 @@ fun ViewerScreen(
                     vatFile = repository.blobFile(item.id),
                     loadDek = { repository.unwrapDek(item.id) },
                     mimeType = item.mimeType,
+                    title = item.displayName,
                     onPlaybackActive = onPlaybackActive,
                     onPlayerCreated = onPlayerCreated,
                     modifier = mod,

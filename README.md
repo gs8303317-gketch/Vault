@@ -1,8 +1,13 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.3.2** — fragment requestCode import fix, folder rename, and vault storage meter on top of Phase 1.
+Offline encrypted personal workspace for Android. **v0.3.3** — premium media player gestures + PDF page swipe/nav on top of Phase 1.
 
-## What this release adds (v0.3.2 / versionCode 9)
+## What this release adds (v0.3.3 / versionCode 10)
+
+- **PDF page navigation**: `transformable(canPan = { scale > 1.02f })` so HorizontalPager receives swipes at 1× zoom; prev/next chevrons beside Page X/Y; zoom reset on page change; pinch/double-tap zoom + clamped pan unchanged.
+- **Premium offline media player**: custom Compose overlay (`useController = false`) — seek slider with times, ±10s, play/pause, tap show/hide (~3s auto-hide), double-tap seek, horizontal scrub overlay; **video** left-half brightness + right-half volume (AudioManager STREAM_MUSIC) with % overlays; **audio** dark UI + prominent seek/volume. ExoPlayer decrypting path unchanged. No INTERNET / no FLAG_SECURE.
+
+## Also in v0.3.2 / versionCode 9
 
 - **Import requestCode fix**: Explicit `androidx.fragment:fragment-ktx:1.8.5` wins over biometric’s transitive `fragment:1.2.5`, so `ActivityResultRegistry` requestCodes (high 16 bits set in activity 1.9.x) no longer trip `checkForValidRequestCode`. Import uses `OpenMultipleDocuments` + `arrayOf("*/*")`; defer-background-lock + try/catch kept.
 - **Folder rename**: Edit icon / long-press opens rename dialog; uses existing `VaultRepository.renameFolder` (no schema change).
@@ -41,7 +46,7 @@ Nested folders, bulk export, tablet two-pane, import cancel/resume, image editor
 
 ## Limitations (honest)
 
-- **Destructive DB migration on upgrade to v0.3.0**: Room schema wipe via `fallbackToDestructiveMigration` — early-app OK; re-import after upgrade if you had data on v0.2.x. **v0.3.1 / v0.3.2 keep Room v3** — no schema change / no extra wipe for 0.3.0 → 0.3.2.
+- **Destructive DB migration on upgrade to v0.3.0**: Room schema wipe via `fallbackToDestructiveMigration` — early-app OK; re-import after upgrade if you had data on v0.2.x. **v0.3.1 / v0.3.2 / v0.3.3 keep Room v3** — no schema change / no extra wipe for 0.3.0 → 0.3.3.
 - Biometric wrap is invalidated if biometrics are re-enrolled on the device (`setInvalidatedByBiometricEnrollment`); re-enable from Settings after PIN unlock
 - Rooted / unlocked session can read vault memory and files
 - Screenshots of unlocked screens work (intentional for testing in P0–P3)

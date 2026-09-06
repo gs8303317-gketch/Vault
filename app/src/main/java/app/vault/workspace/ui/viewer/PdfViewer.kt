@@ -12,16 +12,23 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -30,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,14 +52,16 @@ import androidx.compose.ui.unit.dp
 import app.vault.workspace.ui.theme.VaultAccent
 import app.vault.workspace.ui.theme.VaultTextMuted
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.max
 
 /**
  * PDF pages must be rendered onto an opaque white bitmap.
- * Zoom pan is clamped to content bounds; pager swipe is disabled while zoomed
- * so gestures don't fight and the page doesn't drift off-screen.
+ * Zoom pan is clamped to content bounds.
+ * [Modifier.transformable] uses canPan so horizontal pans at scale≈1 pass through
+ * to [HorizontalPager] for page swipes; pan only when zoomed.
  */
 @Composable
 fun PdfViewer(
@@ -66,6 +76,7 @@ fun PdfViewer(
     var pfd by remember { mutableStateOf<ParcelFileDescriptor?>(null) }
     val density = LocalDensity.current.density
     var pageZoomed by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
         try {
@@ -121,13 +132,52 @@ fun PdfViewer(
                             },
                         )
                     }
-                    Text(
-                        "Page ${pagerState.currentPage + 1} / $pageCount",
-                        color = VaultTextMuted,
-                        modifier = Modifier
+                    Row(
+                        Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                    )
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        IconButton(
+                            onClick = {
+                                val prev = pagerState.currentPage - 1
+                                if (prev >= 0) {
+                                    scope.launch { pagerState.animateScrollToPage(prev) }
+                                }
+                            },
+                            enabled = pagerState.currentPage > 0,
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                                contentDescription = "Previous page",
+                                tint = if (pagerState.currentPage > 0) VaultAccent else VaultTextMuted,
+                            )
+                        }
+                        Text(
+                            "Page ${pagerState.currentPage + 1} / $pageCount",
+                            color = VaultTextMuted,
+                        )
+                        IconButton(
+                            onClick = {
+                                val next = pagerState.currentPage + 1
+                                if (next < pageCount) {
+                                    scope.launch { pagerState.animateScrollToPage(next) }
+                                }
+                            },
+                            enabled = pagerState.currentPage < pageCount - 1,
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = "Next page",
+                                tint = if (pagerState.currentPage < pageCount - 1) {
+                                    VaultAccent
+                                } else {
+                                    VaultTextMuted
+                                },
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -209,7 +259,12 @@ private fun PdfPage(
                             translationX = offset.x,
                             translationY = offset.y,
                         )
-                        .transformable(state = transformState, lockRotationOnZoomPan = true)
+                        // canPan=false at scale≈1 lets HorizontalPager receive swipe pans
+                        .transformable(
+                            state = transformState,
+                            canPan = { scale > 1.02f },
+                            lockRotationOnZoomPan = true,
+                        )
                         .pointerInput(pageIndex) {
                             detectTapGestures(
                                 onDoubleTap = {
