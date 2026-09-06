@@ -1,6 +1,12 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.4.1** — seek reliability, smoother decrypt playback, PiP removed for privacy.
+Offline encrypted personal workspace for Android. **v0.4.2** — real video seek fix, library view/sort persistence.
+
+## What this release adds (v0.4.2 / versionCode 19)
+
+- **Video seek (real fix)**: scrub/slider no longer live-`seekTo` on every drag tick (that flushed video to start). Seek commits on release; ±10s / resume use a settling guard so transient `currentPosition==0` cannot fight the target. EncryptedDataSource open/close hardened; ChunkCache + `VaultCrypto.decryptRange` random-access unit tests.
+- **Library prefs**: Grid/Comfortable/List view mode and sort persist via SharedPreferences (survive exit/login), same pattern as playback resume positions.
+- Still **no PiP**.
 
 ## What this release adds (v0.4.1 / versionCode 18)
 
@@ -72,7 +78,7 @@ Offline encrypted personal workspace for Android. **v0.4.1** — seek reliabilit
 
 ## Not in this slice (later)
 
-Nested folders, bulk export, tablet two-pane, import cancel/resume, image editor, Office preview, cloud sync, calculator disguise, PIN recovery, proper Room migrations (non-destructive), FLAG_SECURE, library sort toggle.
+Nested folders, bulk export, tablet two-pane, import cancel/resume, image editor, Office preview, cloud sync, calculator disguise, PIN recovery, proper Room migrations (non-destructive), FLAG_SECURE.
 
 ## Limitations (honest)
 

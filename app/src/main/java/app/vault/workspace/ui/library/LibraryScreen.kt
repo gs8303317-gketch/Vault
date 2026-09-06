@@ -93,6 +93,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.input.ImeAction
@@ -148,9 +149,11 @@ fun LibraryScreen(
     var favoritesOnly by remember { mutableStateOf(false) }
     var selectionMode by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var sort by remember { mutableStateOf(LibrarySort.NEWEST) }
+    val context = LocalContext.current
+    val libraryPrefs = remember(context) { LibraryPrefs(context) }
+    var sort by remember { mutableStateOf(libraryPrefs.getSort()) }
     var sortMenuOpen by remember { mutableStateOf(false) }
-    var viewMode by remember { mutableStateOf(LibraryViewMode.GRID) }
+    var viewMode by remember { mutableStateOf(libraryPrefs.getViewMode()) }
     var viewMenuOpen by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
@@ -277,6 +280,7 @@ fun LibraryScreen(
                                         },
                                         onClick = {
                                             viewMode = option
+                                            libraryPrefs.setViewMode(option)
                                             viewMenuOpen = false
                                         },
                                     )
@@ -305,6 +309,7 @@ fun LibraryScreen(
                                         },
                                         onClick = {
                                             sort = option
+                                            libraryPrefs.setSort(option)
                                             sortMenuOpen = false
                                         },
                                     )

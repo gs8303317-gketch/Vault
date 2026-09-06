@@ -13,6 +13,9 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * Media3 DataSource that decrypts VAULT1 on demand for the requested byte range.
  * Supports random access so ProgressiveMediaSource can build a SeekMap and seek.
+ *
+ * [dataSpec.position] is a plaintext byte offset. Each [open] starts a fresh read
+ * window; Media3 closes and re-opens on every seek.
  */
 class EncryptedDataSource(
     private val vatFile: File,
@@ -28,15 +31,23 @@ class EncryptedDataSource(
     private var uri: Uri? = null
 
     override fun open(dataSpec: DataSpec): Long {
-        // Always reset — Media3 re-opens on every seek.
-        close()
+        // Media3 normally close()s before re-open; if not, finish the prior transfer
+        // so BaseDataSource transferStarted state stays consistent.
+        if (opened) {
+            close()
+        } else {
+            releaseRaf()
+        }
         transferInitializing(dataSpec)
         val localRaf = RandomAccessFile(vatFile, "r")
         raf = localRaf
         val start = dataSpec.position.coerceAtLeast(0L)
+        require(start <= cachedHeader.plaintextSize) {
+            "DataSpec position $start past plaintext ${cachedHeader.plaintextSize}"
+        }
         position = start
         bytesRemaining = if (dataSpec.length != C.LENGTH_UNSET.toLong()) {
-            dataSpec.length
+            dataSpec.length.coerceAtMost(cachedHeader.plaintextSize - start)
         } else {
             (cachedHeader.plaintextSize - start).coerceAtLeast(0L)
         }
@@ -70,16 +81,22 @@ class EncryptedDataSource(
     override fun getUri(): Uri? = if (opened) uri else null
 
     override fun close() {
-        try {
-            raf?.close()
-        } catch (_: Exception) {
-        }
-        raf = null
+        releaseRaf()
         if (opened) {
             opened = false
             transferEnded()
         }
         uri = null
+        position = 0
+        bytesRemaining = 0
+    }
+
+    private fun releaseRaf() {
+        try {
+            raf?.close()
+        } catch (_: Exception) {
+        }
+        raf = null
     }
 }
 
@@ -87,7 +104,7 @@ class EncryptedDataSource(
  * Small plaintext-chunk cache shared by all DataSources for one playback session.
  * Speeds sequential reads and nearby seeks without holding the whole file.
  */
-class ChunkCache(private val maxEntries: Int = 8) {
+class ChunkCache(private val maxEntries: Int = 16) {
     private data class Entry(val index: Int, val plain: ByteArray)
 
     private val map = ConcurrentHashMap<Int, Entry>()
@@ -114,12 +131,22 @@ class ChunkCache(private val maxEntries: Int = 8) {
             val plain = plaintextChunk(raf, header, dek, chunkIndex)
             val chunkPlainStart = chunkIndex.toLong() * chunkSize
             val localOff = (pos - chunkPlainStart).toInt()
+            require(localOff in 0 until plain.size) {
+                "chunk $chunkIndex localOff=$localOff size=${plain.size}"
+            }
             val n = minOf(plain.size - localOff, (end - pos).toInt())
+            require(n > 0) { "decryptRange made no progress at pos=$pos" }
             System.arraycopy(plain, localOff, out, dest, n)
             dest += n
             pos += n
         }
         return toCopy
+    }
+
+    @Synchronized
+    fun clear() {
+        map.clear()
+        order.clear()
     }
 
     @Synchronized
@@ -134,7 +161,7 @@ class ChunkCache(private val maxEntries: Int = 8) {
         val chunkPlainStart = chunkIndex.toLong() * chunkSize
         val chunkPlainLen =
             minOf(chunkSize.toLong(), header.plaintextSize - chunkPlainStart).toInt()
-        // Decrypt just this chunk via VaultCrypto helper (single-chunk range).
+        require(chunkPlainLen > 0) { "empty chunk $chunkIndex" }
         val buf = ByteArray(chunkPlainLen)
         val n = VaultCrypto.decryptRange(
             raf,
@@ -150,7 +177,14 @@ class ChunkCache(private val maxEntries: Int = 8) {
         order.addLast(chunkIndex)
         while (order.size > maxEntries) {
             val evict = order.removeFirst()
-            map.remove(evict)
+            // Do not evict the chunk we just inserted (can happen if maxEntries==0).
+            if (evict == chunkIndex && order.isNotEmpty()) {
+                order.addLast(evict)
+                val other = order.removeFirst()
+                if (other != chunkIndex) map.remove(other)
+            } else if (evict != chunkIndex) {
+                map.remove(evict)
+            }
         }
         return plain
     }

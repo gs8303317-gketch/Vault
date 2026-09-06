@@ -275,6 +275,8 @@ private fun PremiumPlayerOverlay(
     var controlsVisible by remember { mutableStateOf(true) }
     var scrubbing by remember { mutableStateOf(false) }
     var scrubPosition by remember { mutableFloatStateOf(0f) }
+    /** True while ExoPlayer is settling after a user seek — ignore transient position 0. */
+    var seekSettling by remember { mutableStateOf(false) }
 
     var volumeOverlay by remember { mutableStateOf<Int?>(null) }
     var brightnessOverlay by remember { mutableStateOf<Int?>(null) }
@@ -345,8 +347,11 @@ private fun PremiumPlayerOverlay(
         player.playbackParameters = PlaybackParameters(baseSpeed)
         var saveTick = 0
         while (isActive) {
-            if (!scrubbing) {
-                positionMs = player.currentPosition.coerceAtLeast(0L)
+            if (!scrubbing && !seekSettling) {
+                val pos = player.currentPosition.coerceAtLeast(0L)
+                // While a seek is outstanding ExoPlayer may briefly report 0 for video;
+                // do not let that wipe the UI target or fight the real SeekMap land.
+                positionMs = pos
             }
             val d = player.duration
             durationMs = if (d > 0) d else 0L
@@ -358,8 +363,9 @@ private fun PremiumPlayerOverlay(
             if (loopMode == LoopMode.AB && a != null && b != null && b > a) {
                 val pos = player.currentPosition
                 if (pos >= b) {
-                    player.seekTo(a)
+                    seekSettling = true
                     positionMs = a
+                    player.seekTo(a)
                 }
             }
 
@@ -377,16 +383,17 @@ private fun PremiumPlayerOverlay(
         }
     }
 
-    // Resume once duration is known
+    // Resume once duration is known (once). Mark settling so poller won't snap to 0.
     LaunchedEffect(durationMs, itemId) {
         if (didResume || itemId == null || durationMs <= 0L) return@LaunchedEffect
         val saved = positionStore.getPositionMs(itemId)
         val resumeAt = PlaybackPositionStore.resumePosition(saved, durationMs)
-        if (resumeAt > 0L) {
-            player.seekTo(resumeAt)
-            positionMs = resumeAt
-        }
         didResume = true
+        if (resumeAt > 0L) {
+            seekSettling = true
+            positionMs = resumeAt
+            player.seekTo(resumeAt)
+        }
     }
 
     // Loop mode → ExoPlayer repeat
@@ -416,16 +423,40 @@ private fun PremiumPlayerOverlay(
         }
     }
 
-    // Auto-next when track ends (unless looping)
+    // Auto-next when track ends (unless looping); clear seekSettling when READY
     DisposableEffect(player, loopMode, onNext) {
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_READY ||
+                    playbackState == Player.STATE_ENDED
+                ) {
+                    if (seekSettling) {
+                        seekSettling = false
+                        positionMs = player.currentPosition.coerceAtLeast(0L)
+                    }
+                }
                 if (playbackState == Player.STATE_ENDED &&
                     loopMode == LoopMode.OFF
                 ) {
                     val id = itemId
                     if (id != null) positionStore.clear(id)
                     onNext?.invoke()
+                }
+            }
+
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int,
+            ) {
+                if (reason == Player.DISCONTINUITY_REASON_SEEK ||
+                    reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT
+                ) {
+                    // Seek landed (may still buffer). Keep UI on the committed target
+                    // until STATE_READY clears seekSettling.
+                    if (seekSettling) {
+                        positionMs = newPosition.positionMs.coerceAtLeast(0L)
+                    }
                 }
             }
         }
@@ -498,13 +529,23 @@ private fun PremiumPlayerOverlay(
         showControls()
     }
 
+
+    fun commitSeek(targetMs: Long) {
+        val dur = player.duration.coerceAtLeast(0L)
+        val target = targetMs.coerceIn(0L, if (dur > 0) dur else Long.MAX_VALUE)
+        seekSettling = true
+        scrubbing = false
+        positionMs = target
+        player.seekTo(target)
+    }
+
     fun seekBy(deltaMs: Long) {
         if (gesturesLocked) return
+        val base = if (seekSettling) positionMs else player.currentPosition.coerceAtLeast(0L)
         val dur = player.duration.coerceAtLeast(0L)
-        val target = (player.currentPosition + deltaMs)
+        val target = (base + deltaMs)
             .coerceIn(0L, if (dur > 0) dur else Long.MAX_VALUE)
-        player.seekTo(target)
-        positionMs = target
+        commitSeek(target)
         seekOverlayMs = deltaMs
         showControls()
     }
@@ -625,7 +666,6 @@ private fun PremiumPlayerOverlay(
                         var gestureSeekAccum = 0L
                         var seekBasePos = 0L
                         var pendingSeekTarget = -1L
-                        var lastLiveSeekMs = 0L
                         var gestureVol = volumeFraction
                         var gestureBright = brightness
                         var longPressArmed = !gesturesLocked
@@ -677,9 +717,17 @@ private fun PremiumPlayerOverlay(
                                     gestureVol = volumeFraction
                                     gestureBright = brightness
                                     if (mode == 2) {
-                                        seekBasePos = player.currentPosition.coerceAtLeast(0L)
+                                        // Prefer UI position while a prior seek is settling —
+                                        // player.currentPosition can read 0 mid-video-seek.
+                                        seekBasePos = when {
+                                            scrubbing -> scrubPosition.toLong()
+                                            seekSettling -> positionMs
+                                            else -> player.currentPosition.coerceAtLeast(0L)
+                                        }
                                         gestureSeekAccum = 0L
                                         pendingSeekTarget = seekBasePos
+                                        scrubbing = true
+                                        scrubPosition = seekBasePos.toFloat()
                                         seekOverlayMs = 0L
                                     }
                                 }
@@ -701,16 +749,14 @@ private fun PremiumPlayerOverlay(
                                             // currentPosition lag resetting seek to 0.
                                             val deltaMs = ((totalDx / width) * dur).toLong()
                                             val target = (seekBasePos + deltaMs).coerceIn(0L, dur)
+                                            // UI-only scrub: do NOT seek until release.
+                                            // Live seekTo during drag makes video flush to
+                                            // keyframe 0 / Unseekable interim and restart.
                                             pendingSeekTarget = target
                                             positionMs = target
+                                            scrubPosition = target.toFloat()
                                             gestureSeekAccum = deltaMs
                                             seekOverlayMs = deltaMs
-                                            // Live seek (throttled) so scrub feels responsive
-                                            val now = System.currentTimeMillis()
-                                            if (now - lastLiveSeekMs >= 120L) {
-                                                lastLiveSeekMs = now
-                                                player.seekTo(target)
-                                            }
                                         }
                                     }
                                 }
@@ -741,8 +787,9 @@ private fun PremiumPlayerOverlay(
                                     }
                                 } else {
                                     if (mode == 2 && pendingSeekTarget >= 0L) {
-                                        player.seekTo(pendingSeekTarget)
-                                        positionMs = pendingSeekTarget
+                                        commitSeek(pendingSeekTarget)
+                                    } else if (mode == 2) {
+                                        scrubbing = false
                                     }
                                     showControls()
                                     lastTapTime = 0L
@@ -855,13 +902,10 @@ private fun PremiumPlayerOverlay(
                             scrubbing = true
                             scrubPosition = v
                             positionMs = v.toLong()
-                            player.seekTo(v.toLong())
                             showControls()
                         },
                         onValueChangeFinished = {
-                            player.seekTo(scrubPosition.toLong())
-                            positionMs = scrubPosition.toLong()
-                            scrubbing = false
+                            commitSeek(scrubPosition.toLong())
                         },
                         valueRange = 0f..sliderMax,
                         modifier = Modifier.weight(1f),

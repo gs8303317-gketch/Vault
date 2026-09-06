@@ -21,15 +21,16 @@ object PlayerFactory {
             .setBufferDurationsMs(
                 /* minBufferMs */ 15_000,
                 /* maxBufferMs */ 50_000,
-                /* bufferForPlaybackMs */ 1_000,
-                /* bufferForPlaybackAfterRebufferMs */ 2_000,
+                /* bufferForPlaybackMs */ 1_250,
+                /* bufferForPlaybackAfterRebufferMs */ 2_500,
             )
             .build()
 
-        // CBR seeking fallback helps when an MP4 seek table is incomplete;
-        // primary path still uses the real SeekMap when the extractor builds one.
+        // CBR seeking helps audio containers without a TOC. MP4 still uses its
+        // sample-table SeekMap when the extractor builds one from decrypted bytes.
         val extractorsFactory = DefaultExtractorsFactory()
             .setConstantBitrateSeekingEnabled(true)
+            .setConstantBitrateSeekingAlwaysEnabled(true)
 
         val player = ExoPlayer.Builder(context)
             .setLoadControl(loadControl)
@@ -39,8 +40,9 @@ object PlayerFactory {
         player.repeatMode = Player.REPEAT_MODE_OFF
 
         val factory = EncryptedDataSourceFactory(vatFile, dek)
-        // Custom scheme avoids any file:// shortcuts that could use encrypted bytes as MP4.
-        val playUri = Uri.parse("vaultenc:///${vatFile.name}")
+        // Custom scheme + stable path (no .vat suffix) so extractors rely on mime/sniff,
+        // never on treating encrypted bytes as a raw file:// MP4.
+        val playUri = Uri.parse("vaultenc:///play")
         val mediaSource = ProgressiveMediaSource.Factory(factory, extractorsFactory)
             .createMediaSource(
                 MediaItem.Builder()
