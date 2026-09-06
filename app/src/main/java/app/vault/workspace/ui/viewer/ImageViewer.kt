@@ -3,8 +3,11 @@ package app.vault.workspace.ui.viewer
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroidSize
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
@@ -24,10 +27,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import app.vault.workspace.ui.theme.VaultAccent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
 
 @Composable
 fun ImageViewer(
@@ -90,29 +95,75 @@ fun ImageViewer(
                             translationX = offset.x,
                             translationY = offset.y,
                         )
-                        .pointerInput(Unit) {
-                            detectTransformGestures { _, pan, zoom, _ ->
-                                scale = (scale * zoom).coerceIn(1f, 5f)
-                                offset = if (scale <= 1.01f) {
-                                    scale = 1f
-                                    Offset.Zero
-                                } else {
-                                    offset + pan
+                        .pointerInput(onSingleTap) {
+                            val touchSlop = viewConfiguration.touchSlop
+                            val doubleTapTimeout = viewConfiguration.doubleTapTimeoutMillis
+                            var lastTapTime = 0L
+
+                            awaitEachGesture {
+                                awaitFirstDown(requireUnconsumed = false)
+                                var zoomAcc = 1f
+                                var panAcc = Offset.Zero
+                                var pastTouchSlop = false
+                                var lockedToTransform = false
+
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    if (event.changes.any { it.isConsumed }) break
+
+                                    val zoomChange = event.calculateZoom()
+                                    val panChange = event.calculatePan()
+
+                                    if (!pastTouchSlop) {
+                                        zoomAcc *= zoomChange
+                                        panAcc += panChange
+                                        val centroidSize = event.calculateCentroidSize(useCurrent = false)
+                                        val zoomMotion = abs(1f - zoomAcc) * centroidSize
+                                        val panMotion = panAcc.getDistance()
+                                        if (zoomMotion > touchSlop ||
+                                            panMotion > touchSlop ||
+                                            event.changes.count { it.pressed } > 1
+                                        ) {
+                                            pastTouchSlop = true
+                                            lockedToTransform = true
+                                        }
+                                    }
+
+                                    if (lockedToTransform) {
+                                        val z = event.calculateZoom()
+                                        val p = event.calculatePan()
+                                        scale = (scale * z).coerceIn(1f, 5f)
+                                        offset = if (scale <= 1.01f) {
+                                            scale = 1f
+                                            Offset.Zero
+                                        } else {
+                                            offset + p
+                                        }
+                                        event.changes.forEach {
+                                            if (it.positionChanged()) it.consume()
+                                        }
+                                    }
+
+                                    if (event.changes.none { it.pressed }) {
+                                        if (!lockedToTransform) {
+                                            val now = System.currentTimeMillis()
+                                            if (now - lastTapTime <= doubleTapTimeout) {
+                                                if (scale > 1.2f) {
+                                                    scale = 1f
+                                                    offset = Offset.Zero
+                                                } else {
+                                                    scale = 2.5f
+                                                }
+                                                lastTapTime = 0L
+                                            } else {
+                                                lastTapTime = now
+                                                onSingleTap?.invoke()
+                                            }
+                                        }
+                                        break
+                                    }
                                 }
                             }
-                        }
-                        .pointerInput(Unit) {
-                            detectTapGestures(
-                                onTap = { onSingleTap?.invoke() },
-                                onDoubleTap = {
-                                    if (scale > 1.2f) {
-                                        scale = 1f
-                                        offset = Offset.Zero
-                                    } else {
-                                        scale = 2.5f
-                                    }
-                                },
-                            )
                         },
                 )
             }

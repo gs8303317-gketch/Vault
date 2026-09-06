@@ -7,6 +7,20 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.ui.Modifier
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -34,6 +48,10 @@ import app.vault.workspace.data.VaultRepository
 import app.vault.workspace.export.ExportController
 import app.vault.workspace.import.ImportController
 import app.vault.workspace.ui.folders.FoldersScreen
+import app.vault.workspace.ui.theme.VaultAccent
+import app.vault.workspace.ui.theme.VaultBg
+import app.vault.workspace.ui.theme.VaultSurface
+import app.vault.workspace.ui.theme.VaultTextMuted
 import app.vault.workspace.ui.folders.MoveToFolderDialog
 import app.vault.workspace.ui.library.LibraryScreen
 import app.vault.workspace.ui.library.ThumbCache
@@ -327,7 +345,74 @@ fun VaultNav(
         currentFolderName = null
     }
 
-    NavHost(navController = nav, startDestination = start) {
+    val hubRoutes = setOf(Routes.Library, Routes.Folders, Routes.Settings)
+    val showBottomBar = currentRoute in hubRoutes
+
+    fun navigateHub(route: String) {
+        if (route == Routes.Library) {
+            nav.navigate(Routes.Library) {
+                popUpTo(Routes.Library) { inclusive = false }
+                launchSingleTop = true
+            }
+        } else {
+            nav.navigate(route) {
+                popUpTo(Routes.Library) { inclusive = false }
+                launchSingleTop = true
+            }
+        }
+    }
+
+    Scaffold(
+        containerColor = VaultBg,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        bottomBar = {
+            if (showBottomBar) {
+                NavigationBar(containerColor = VaultSurface) {
+                    val itemColors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = VaultAccent,
+                        selectedTextColor = VaultAccent,
+                        indicatorColor = VaultAccent.copy(alpha = 0.22f),
+                        unselectedIconColor = VaultTextMuted,
+                        unselectedTextColor = VaultTextMuted,
+                    )
+                    NavigationBarItem(
+                        selected = currentRoute == Routes.Library,
+                        onClick = { navigateHub(Routes.Library) },
+                        icon = {
+                            Icon(Icons.Default.VideoLibrary, contentDescription = "Library")
+                        },
+                        label = { Text("Library") },
+                        colors = itemColors,
+                    )
+                    NavigationBarItem(
+                        selected = currentRoute == Routes.Folders,
+                        onClick = { navigateHub(Routes.Folders) },
+                        icon = {
+                            Icon(Icons.Default.Folder, contentDescription = "Folders")
+                        },
+                        label = { Text("Folders") },
+                        colors = itemColors,
+                    )
+                    NavigationBarItem(
+                        selected = currentRoute == Routes.Settings,
+                        onClick = { navigateHub(Routes.Settings) },
+                        icon = {
+                            Icon(Icons.Default.Settings, contentDescription = "Settings")
+                        },
+                        label = { Text("Settings") },
+                        colors = itemColors,
+                    )
+                }
+            }
+        },
+    ) { scaffoldPadding ->
+    NavHost(
+        navController = nav,
+        startDestination = start,
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(scaffoldPadding),
+    ) {
         composable(Routes.FirstRun) {
             FirstRunScreen(onContinue = { nav.navigate(Routes.SetupPin) })
         }
@@ -590,6 +675,8 @@ fun VaultNav(
             }
         }
     }
+
+    } // Scaffold
 
     moveItemIds?.let { ids ->
         MoveToFolderDialog(

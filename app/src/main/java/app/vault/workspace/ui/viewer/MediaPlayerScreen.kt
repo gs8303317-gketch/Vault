@@ -4,7 +4,9 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.media.AudioManager
+import android.view.HapticFeedbackConstants
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -55,6 +57,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -87,8 +90,9 @@ private const val CONTROLS_HIDE_MS = 3_000L
  * horizontal scrub / double-tap seek. Audio: dark UI, large play/pause, seek + volume.
  *
  * Brightness writes the activity window [android.view.WindowManager.LayoutParams.screenBrightness]
- * (0.01f..1f) and is left as-is on exit — session-local window attr only; system brightness
- * is not changed.
+ * (0.01f..1f) while playing. On dispose (leaving the player), the original window value is
+ * restored — typically [android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE] (-1f)
+ * so system brightness returns. Only the window attr is touched; global system setting is never written.
  */
 @Composable
 fun MediaPlayerScreen(
@@ -164,9 +168,26 @@ private fun PremiumPlayerOverlay(
     onControlsVisibilityChanged: (Boolean) -> Unit,
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
     val activity = remember(context) { context.findActivity() }
     val audioManager = remember(context) {
         context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    }
+
+    // Capture original window brightness before any gesture override (often BRIGHTNESS_OVERRIDE_NONE).
+    val originalScreenBrightness = remember(activity) {
+        activity?.window?.attributes?.screenBrightness
+            ?: WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+    }
+
+    DisposableEffect(activity) {
+        onDispose {
+            activity?.window?.let { win ->
+                val lp = win.attributes
+                lp.screenBrightness = originalScreenBrightness
+                win.attributes = lp
+            }
+        }
     }
 
     var positionMs by remember { mutableLongStateOf(0L) }
@@ -180,7 +201,7 @@ private fun PremiumPlayerOverlay(
     var brightnessOverlay by remember { mutableStateOf<Int?>(null) }
     var seekOverlayMs by remember { mutableStateOf<Long?>(null) }
 
-    // Window brightness 0.01..1; start from current window or mid
+    // Window brightness 0.01..1 for gestures; start from current override or mid
     var brightness by remember {
         mutableFloatStateOf(
             activity?.window?.attributes?.screenBrightness
@@ -243,6 +264,7 @@ private fun PremiumPlayerOverlay(
 
     fun togglePlay() {
         if (player.isPlaying) player.pause() else player.play()
+        view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
         showControls()
     }
 
@@ -557,32 +579,42 @@ private fun PremiumPlayerOverlay(
                     }
                 }
 
-                if (isAudio) {
-                    Spacer(Modifier.height(12.dp))
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
+                Spacer(Modifier.height(if (isAudio) 12.dp else 4.dp))
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(
+                        onClick = {
+                            // Mute toggle via chrome (gestures still work)
+                            if (volumeFraction > 0.01f) {
+                                applyVolumeFraction(0f)
+                            } else {
+                                applyVolumeFraction(0.5f)
+                            }
+                            showControls()
+                        },
                     ) {
                         Icon(
                             Icons.AutoMirrored.Filled.VolumeUp,
-                            contentDescription = null,
+                            contentDescription = "Volume",
                             tint = VaultTextMuted,
                             modifier = Modifier.size(22.dp),
                         )
-                        Slider(
-                            value = volumeFraction,
-                            onValueChange = { v ->
-                                applyVolumeFraction(v)
-                                showControls()
-                            },
-                            modifier = Modifier.weight(1f).padding(start = 8.dp),
-                            colors = SliderDefaults.colors(
-                                thumbColor = VaultAccent,
-                                activeTrackColor = VaultAccent,
-                                inactiveTrackColor = Color.White.copy(alpha = 0.3f),
-                            ),
-                        )
                     }
+                    Slider(
+                        value = volumeFraction,
+                        onValueChange = { v ->
+                            applyVolumeFraction(v)
+                            showControls()
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = SliderDefaults.colors(
+                            thumbColor = VaultAccent,
+                            activeTrackColor = VaultAccent,
+                            inactiveTrackColor = Color.White.copy(alpha = 0.3f),
+                        ),
+                    )
                 }
             }
         }
