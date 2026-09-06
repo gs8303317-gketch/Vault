@@ -170,9 +170,33 @@ fun MediaPlayerScreen(
 
     LaunchedEffect(vatFile, itemId, mimeType) {
         try {
-            // DEK unwrap + video decrypt-to-playcache both on IO (first open of big WEB-DL may take time).
-            val session = withContext(Dispatchers.IO) {
-                val dek = loadDek()
+            // Heavy work on IO; ExoPlayer must be created on main (Media3 thread check).
+            val isVideo = mimeType.startsWith("video/", ignoreCase = true)
+            val session = if (isVideo) {
+                val cacheFile = withContext(Dispatchers.IO) {
+                    val dek = loadDek()
+                    try {
+                        PlayerFactory.prepareVideoCacheFile(
+                            context = context,
+                            vatFile = vatFile,
+                            dek = dek,
+                            mimeType = mimeType,
+                            itemKey = itemId,
+                        )
+                    } finally {
+                        KeyHierarchy.wipe(dek)
+                    }
+                }
+                PlayerFactory.createDecryptingPlayer(
+                    context = context,
+                    vatFile = vatFile,
+                    dek = ByteArray(0),
+                    mimeType = mimeType,
+                    itemKey = itemId,
+                    preparedVideoFile = cacheFile,
+                )
+            } else {
+                val dek = withContext(Dispatchers.IO) { loadDek() }
                 try {
                     PlayerFactory.createDecryptingPlayer(
                         context = context,

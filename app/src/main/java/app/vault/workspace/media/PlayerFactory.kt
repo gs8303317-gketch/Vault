@@ -17,6 +17,9 @@ import java.util.concurrent.atomic.AtomicBoolean
  * ExoPlayer plus optional cleanup (e.g. wipe DEK copy for streaming audio).
  * Video play-cache files are session-scoped and wiped on lock — not deleted here.
  * [release] is idempotent.
+ *
+ * Callers must create/use the player on the **main** thread (Media3 requirement).
+ * Heavy decrypt belongs on a background thread via [prepareVideoCacheFile] first.
  */
 class DecryptingPlayback(
     val player: ExoPlayer,
@@ -39,10 +42,29 @@ class DecryptingPlayback(
 
 object PlayerFactory {
     /**
-     * Video (mime starts with video/): decrypt once into [PlaybackPlaintextCache], play via
-     * [ProgressiveMediaSource] + [FileDataSource] / [Uri.fromFile] (real SeekMap).
-     * Audio: stream via [EncryptedDataSource] (seek already works).
-     * Proxy / FileDescriptorDataSource paths are not used for playback.
+     * IO-only: decrypt video into session play-cache. Does not touch ExoPlayer.
+     */
+    fun prepareVideoCacheFile(
+        context: Context,
+        vatFile: File,
+        dek: ByteArray,
+        mimeType: String,
+        itemKey: String? = null,
+    ): File {
+        val key = itemKey?.takeIf { it.isNotBlank() } ?: vatFile.name
+        return PlaybackPlaintextCache.getOrCreate(
+            context = context.applicationContext,
+            itemKey = key,
+            vatFile = vatFile,
+            dek = dek,
+            mimeType = mimeType,
+        )
+    }
+
+    /**
+     * **Main thread only.** Builds ExoPlayer.
+     * Video: pass [preparedVideoFile] from [prepareVideoCacheFile].
+     * Audio: pass [vatFile]+[dek]; streams via [EncryptedDataSource].
      */
     fun createDecryptingPlayer(
         context: Context,
@@ -50,6 +72,7 @@ object PlayerFactory {
         dek: ByteArray,
         mimeType: String,
         itemKey: String? = null,
+        preparedVideoFile: File? = null,
     ): DecryptingPlayback {
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
@@ -60,7 +83,6 @@ object PlayerFactory {
             )
             .build()
 
-        // CBR seeking helps audio containers without a TOC.
         val extractorsFactory = DefaultExtractorsFactory()
             .setConstantBitrateSeekingEnabled(true)
 
@@ -68,14 +90,8 @@ object PlayerFactory {
         val isVideo = mimeType.startsWith("video/", ignoreCase = true)
 
         return if (isVideo) {
-            val key = itemKey?.takeIf { it.isNotBlank() } ?: vatFile.name
-            val cacheFile = PlaybackPlaintextCache.getOrCreate(
-                context = appCtx,
-                itemKey = key,
-                vatFile = vatFile,
-                dek = dek,
-                mimeType = mimeType,
-            )
+            val cacheFile = preparedVideoFile
+                ?: prepareVideoCacheFile(appCtx, vatFile, dek, mimeType, itemKey)
             buildFileCachePlayer(
                 context = appCtx,
                 cacheFile = cacheFile,
@@ -95,10 +111,6 @@ object PlayerFactory {
         }
     }
 
-    /**
-     * Real filesystem file → ProgressiveMediaSource + FileDataSource → real SeekMap.
-     * Cache entry is kept for the unlock session (wiped on lock).
-     */
     private fun buildFileCachePlayer(
         context: Context,
         cacheFile: File,
@@ -134,7 +146,6 @@ object PlayerFactory {
         loadControl: DefaultLoadControl,
         extractorsFactory: DefaultExtractorsFactory,
     ): DecryptingPlayback {
-        // Own a DEK copy for the DataSource lifetime; wipe on release.
         val dekCopy = dek.copyOf()
         val player = ExoPlayer.Builder(context)
             .setLoadControl(loadControl)

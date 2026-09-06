@@ -1,6 +1,10 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.4.6** — video seek via session plaintext play-cache (wiped on lock); audio stays stream-decrypt.
+Offline encrypted personal workspace for Android. **v0.4.7** — video seek via session plaintext play-cache (wiped on lock); audio stays stream-decrypt.
+
+## What this release adds (v0.4.7 / versionCode 24)
+
+- **Playback thread fix**: ExoPlayer is created on the main thread again; video decrypt-to-playcache stays on IO. Fixes "Player is accessed on the wrong thread".
 
 ## What this release adds (v0.4.6 / versionCode 23)
 
