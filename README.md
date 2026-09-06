@@ -1,6 +1,14 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.4.4** — playback restored via EncryptedDataSource (proxy `/proc` player path removed).
+Offline encrypted personal workspace for Android. **v0.4.5** — research-backed seek (Media3 1.11 mfra + FileDescriptorDataSource proxy; no `/proc`).
+
+## What this release adds (v0.4.5 / versionCode 22)
+
+- **Seek (research-backed)**: Media3 **1.11.0** — `DefaultExtractorsFactory` enables `FLAG_READ_MFRA_FOR_SEEK_MAP` so fragmented MP4 WEB-DLs without `sidx` get a real SeekMap (avoids `ProgressiveMediaPeriod` forcing seek to 0).
+- **Proxy FD path (safe)**: prefer `EncryptedSeekableOpener.openProxyOrNull` + official `FileDescriptorDataSource(fd, 0, plaintextSize)` — **not** `FileDataSource` on `/proc/self/fd` (that broke playback on device in v0.4.3). Exclusive single-open factory for Media3's one-open-per-FD rule.
+- **Hard fallback**: if proxy is null or FD player build throws → same `EncryptedDataSource` path as v0.4.4 (playback stays working).
+- **UI**: keep commit-on-release scrub + `seekSettling`. Still **no PiP**.
+- **Tooling for Media3 1.11**: `compileSdk` 36 (targetSdk still 35), AGP 8.9.1, Gradle 8.11.1, Kotlin/KSP 2.2.10 (`ksp.useKSP2=false` for Room).
 
 ## What this release adds (v0.4.4 / versionCode 21)
 
@@ -87,7 +95,7 @@ Offline encrypted personal workspace for Android. **v0.4.4** — playback restor
 - 4-digit PIN setup / unlock / **change** (weak PINs rejected, progressive lockout on unlock)
 - VAULT1 chunked AES-256-GCM + PBKDF2-HMAC-SHA256 (210 000 iterations)
 - SAF multi-file import + **share-sheet import**; SAF export with confirmation
-- Image / Media3 decrypting playback (**EncryptedDataSource**) / **secure PDF** (proxy/memfd)
+- Image / Media3 decrypting playback (**FileDescriptorDataSource** proxy FD or **EncryptedDataSource** fallback; Media3 1.11) / **secure PDF** (proxy/memfd)
 - Auto-lock on background; idle timer pauses during playback; SAF/share defer-lock
 - No `INTERNET` permission; `allowBackup=false`; screenshots allowed (no `FLAG_SECURE` until Phase 4)
 

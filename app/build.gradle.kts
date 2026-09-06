@@ -17,17 +17,17 @@ val releaseSigningReady = !releaseStoreFile.isNullOrBlank() &&
 
 android {
     namespace = "app.vault.workspace"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "app.vault.workspace"
         minSdk = 26
         targetSdk = 35
-        versionCode = 21
-        versionName = "0.4.4"
+        versionCode = 22
+        versionName = "0.4.5"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "VERSION_NAME", "\"0.4.4\"")
-        buildConfigField("int", "VERSION_CODE", "21")
+        buildConfigField("String", "VERSION_NAME", "\"0.4.5\"")
+        buildConfigField("int", "VERSION_CODE", "22")
     }
 
     signingConfigs {
@@ -119,11 +119,11 @@ dependencies {
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
 
-    implementation("androidx.media3:media3-exoplayer:1.5.1")
-    implementation("androidx.media3:media3-ui:1.5.1")
-    implementation("androidx.media3:media3-datasource:1.5.1")
-    implementation("androidx.media3:media3-common:1.5.1")
-    implementation("androidx.media3:media3-extractor:1.5.1")
+    implementation("androidx.media3:media3-exoplayer:1.11.0")
+    implementation("androidx.media3:media3-ui:1.11.0")
+    implementation("androidx.media3:media3-datasource:1.11.0")
+    implementation("androidx.media3:media3-common:1.11.0")
+    implementation("androidx.media3:media3-extractor:1.11.0")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")

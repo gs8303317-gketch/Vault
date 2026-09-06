@@ -21,8 +21,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * plaintext cache when possible (proxy FD / memfd). Last resort: session tmp file
  * deleted+wiped on [EncryptedSeekableHandle.releaseResources].
  *
- * Used by PDF ([EncryptedPdfOpener]). Media playback uses EncryptedDataSource only
- * (not /proc/self/fd + FileDataSource).
+ * Used by PDF ([EncryptedPdfOpener]) and media ([PlayerFactory] via Media3
+ * FileDescriptorDataSource on the proxy PFD — never `/proc/self/fd`).
  */
 class EncryptedSeekableHandle(
     val pfd: ParcelFileDescriptor,
