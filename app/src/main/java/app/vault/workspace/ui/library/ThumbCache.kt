@@ -35,6 +35,12 @@ object ThumbCache {
         return bitmap
     }
 
+    fun remove(id: String) {
+        synchronized(lock) {
+            cache.remove(id)
+        }
+    }
+
     fun clear() {
         synchronized(lock) {
             cache.clear()

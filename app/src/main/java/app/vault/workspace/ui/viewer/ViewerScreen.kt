@@ -57,6 +57,7 @@ import app.vault.workspace.data.VaultRepository
 import app.vault.workspace.data.formatHumanSize
 import app.vault.workspace.data.formatReadableDate
 import app.vault.workspace.ui.export.ExportConfirmDialog
+import app.vault.workspace.ui.library.ThumbCache
 import app.vault.workspace.ui.theme.VaultAccent
 import app.vault.workspace.ui.theme.VaultBg
 import app.vault.workspace.ui.theme.VaultDanger
@@ -135,6 +136,11 @@ fun ViewerScreen(
                     onSlideshowPlayingChange = onSlideshowPlayingChange,
                     slideshowIntervalMs = slideshowIntervalMs,
                     onSlideshowIntervalMsChange = onSlideshowIntervalMsChange,
+                    onCropConfirm = { left, top, right, bottom ->
+                        repository.cropAndReplaceImage(item.id, left, top, right, bottom).also { result ->
+                            if (result.isSuccess) ThumbCache.remove(item.id)
+                        }
+                    },
                 )
                 VaultCategory.VIDEO -> MediaPlayerScreen(
                     vatFile = repository.blobFile(item.id),
@@ -253,6 +259,9 @@ fun ViewerScreen(
     if (showExportConfirm) {
         ExportConfirmDialog(
             fileName = item.displayName,
+            stripsLocationExif = item.category == VaultCategory.IMAGE &&
+                (item.mimeType.equals("image/jpeg", ignoreCase = true) ||
+                    item.mimeType.equals("image/jpg", ignoreCase = true)),
             onConfirm = {
                 showExportConfirm = false
                 onRequestExport(item)

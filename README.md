@@ -1,6 +1,14 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.4.15** — Phase 2 Image Viewer (slideshow, GIF playback, keep-screen-on).
+Offline encrypted personal workspace for Android. **v0.4.16** — Phase 3 Image Viewer (in-vault crop, EXIF strip on JPEG export).
+
+## What this release adds (v0.4.16 / versionCode 33)
+
+- **Phase 3 Image Viewer**: in-vault crop + JPEG export EXIF strip. Phase 1–2 gestures/slideshow/GIF/keep-screen-on unchanged.
+- **Crop (still images)**: Crop on image tool rail opens rect overlay (drag box + corner handles). Confirm → decode → crop → JPEG~92 / PNG (PNG/WebP→PNG) → `VaultCrypto.encryptStream` replacing blob with **same DEK wrap / item id** → `setSizeBytes` (+ mime/thumb) → reload viewer. App-private temps wiped. GIF crop skipped (toast + log).
+- **EXIF strip on export**: `VaultRepository.exportToUri` for JPEG/JPG decrypts to private temp, strips GPS/location tags via AndroidX `ExifInterface` (re-encode fallback), then writes destination. Non-image export unchanged. Export confirm documents location EXIF strip when applicable.
+- **Wire**: `ImageCrop` / `ImageExifStrip` helpers; `cropAndReplaceImage` / `replaceImageBlob`; crop overlay in `ImageViewer`; no MediaStore; no PiP; no seek-prepare revival.
+- **Tests**: JVM `ImageCropTest` + `ImageExifStripTest` (mime/tag gating; no device).
 
 ## What this release adds (v0.4.15 / versionCode 32)
 

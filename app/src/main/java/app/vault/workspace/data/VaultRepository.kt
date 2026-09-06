@@ -14,6 +14,10 @@ import android.provider.OpenableColumns
 import app.vault.workspace.auth.SessionManager
 import app.vault.workspace.crypto.KeyHierarchy
 import app.vault.workspace.crypto.VaultCrypto
+import app.vault.workspace.image.ImageCrop
+import app.vault.workspace.image.ImageExifStrip
+import android.util.Log
+import java.io.FileInputStream
 import app.vault.workspace.media.EncryptedPdfHandle
 import app.vault.workspace.media.EncryptedPdfOpener
 import kotlinx.coroutines.Dispatchers
@@ -443,19 +447,134 @@ class VaultRepository(
         }
     }
 
-    suspend fun exportToUri(id: String, dest: Uri): Result<Unit> = withContext(Dispatchers.IO) {
+    /**
+     * Replace still-image blob with new plaintext bytes using the **same DEK wrap / item id**
+     * (atomic encryptStream .part → .vat). Updates [sizeBytes] and optionally mime / thumb.
+     * App-private temps only; wiped on success/fail. No MediaStore scan.
+     */
+    suspend fun replaceImageBlob(
+        id: String,
+        plaintext: ByteArray,
+        mimeType: String,
+        thumbBitmap: Bitmap? = null,
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        val work = File(session.tmpDir(), "imgreplace-$id-${System.nanoTime()}").also { it.mkdirs() }
+        var dek: ByteArray? = null
         try {
-            val dek = unwrapDek(id)
-            try {
-                context.contentResolver.openOutputStream(dest)?.use { out ->
-                    VaultCrypto.decryptToStream(blobFile(id), dek, out)
-                } ?: return@withContext Result.failure(IllegalStateException("Cannot open destination"))
-                Result.success(Unit)
-            } finally {
-                KeyHierarchy.wipe(dek)
+            val entity = dao.getById(id) ?: return@withContext Result.failure(IllegalStateException("Missing item"))
+            val key = KeyHierarchy.unwrapDek(session.requireVmk(), entity.dekWrap)
+            dek = key
+            VaultCrypto.encryptBytes(plaintext, key, blobFile(id), work)
+            dao.setSizeBytes(id, plaintext.size.toLong())
+            if (mimeType.isNotBlank() && mimeType != entity.mimeType) {
+                dao.setMimeType(id, mimeType)
             }
+            if (thumbBitmap != null) {
+                val hasThumb = runCatching {
+                    encryptThumbBitmap(thumbBitmap, id, key)
+                }.getOrDefault(false)
+                dao.setHasThumb(id, hasThumb)
+            }
+            Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
+        } finally {
+            dek?.let { KeyHierarchy.wipe(it) }
+            wipeWorkDir(work)
+        }
+    }
+
+    /**
+     * In-vault still-image crop: decrypt → crop → compress (JPEG~92 / PNG) →
+     * [replaceImageBlob] with same DEK. Skips GIF (caller should toast).
+     */
+    suspend fun cropAndReplaceImage(
+        id: String,
+        left: Float,
+        top: Float,
+        right: Float,
+        bottom: Float,
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        var plain: ByteArray? = null
+        var encoded: ByteArray? = null
+        var dek: ByteArray? = null
+        try {
+            val entity = dao.getById(id) ?: return@withContext Result.failure(IllegalStateException("Missing item"))
+            if (ImageCrop.isGifMime(entity.mimeType)) {
+                Log.i(TAG, "crop skipped: GIF id=$id")
+                return@withContext Result.failure(IllegalArgumentException("Crop not available for GIFs"))
+            }
+            val key = KeyHierarchy.unwrapDek(session.requireVmk(), entity.dekWrap)
+            dek = key
+            plain = VaultCrypto.decryptToBytes(blobFile(id), key)
+            val crop = ImageCrop.cropAndEncode(plain!!, entity.mimeType, left, top, right, bottom)
+            encoded = crop.bytes
+            // Build thumb from encoded bytes (small)
+            val thumb = runCatching {
+                val enc = encoded!!
+                val bmp = BitmapFactory.decodeByteArray(enc, 0, enc.size) ?: return@runCatching null
+                scaleToMaxSide(bmp, 512)
+            }.getOrNull()
+            // encrypt + DB update (re-uses dek wrap; same item id)
+            val work = File(session.tmpDir(), "imgcrop-$id-${System.nanoTime()}").also { it.mkdirs() }
+            try {
+                VaultCrypto.encryptBytes(encoded!!, key, blobFile(id), work)
+                dao.setSizeBytes(id, encoded!!.size.toLong())
+                if (crop.mimeType != entity.mimeType) {
+                    dao.setMimeType(id, crop.mimeType)
+                }
+                if (thumb != null) {
+                    val hasThumb = runCatching { encryptThumbBitmap(thumb, id, key) }.getOrDefault(false)
+                    dao.setHasThumb(id, hasThumb)
+                }
+                Result.success(Unit)
+            } finally {
+                wipeWorkDir(work)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "cropAndReplaceImage failed id=$id", e)
+            Result.failure(e)
+        } finally {
+            plain?.fill(0)
+            encoded?.fill(0)
+            dek?.let { KeyHierarchy.wipe(it) }
+        }
+    }
+
+    suspend fun exportToUri(id: String, dest: Uri): Result<Unit> = withContext(Dispatchers.IO) {
+        val work = File(session.tmpDir(), "export-$id-${System.nanoTime()}").also { it.mkdirs() }
+        var dek: ByteArray? = null
+        try {
+            val entity = dao.getById(id) ?: return@withContext Result.failure(IllegalStateException("Missing item"))
+            val key = KeyHierarchy.unwrapDek(session.requireVmk(), entity.dekWrap)
+            dek = key
+            val outStream = context.contentResolver.openOutputStream(dest)
+                ?: return@withContext Result.failure(IllegalStateException("Cannot open destination"))
+            outStream.use { out ->
+                if (ImageExifStrip.shouldStripOnExport(entity.mimeType)) {
+                    val plain = File(work, "plain.jpg")
+                    val stripped = File(work, "stripped.jpg")
+                    FileOutputStream(plain).use { fos ->
+                        VaultCrypto.decryptToStream(blobFile(id), key, fos)
+                        fos.fd.sync()
+                    }
+                    val ok = runCatching { ImageExifStrip.stripJpegFile(plain, stripped) }.getOrDefault(false)
+                    if (ok && stripped.exists() && stripped.length() > 0L) {
+                        FileInputStream(stripped).use { it.copyTo(out) }
+                    } else {
+                        // Fall back to raw decrypt if strip failed
+                        FileInputStream(plain).use { it.copyTo(out) }
+                    }
+                } else {
+                    VaultCrypto.decryptToStream(blobFile(id), key, out)
+                }
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        } finally {
+            dek?.let { KeyHierarchy.wipe(it) }
+            wipeWorkDir(work)
         }
     }
 
@@ -514,5 +633,38 @@ class VaultRepository(
                 }
             }
         return null
+    }
+
+    /** Best-effort wipe of app-private work dir (no MediaStore). */
+    private fun wipeWorkDir(dir: File) {
+        if (!dir.exists()) return
+        dir.walkBottomUp().forEach { f ->
+            runCatching {
+                if (f.isFile) {
+                    val len = f.length()
+                    if (len > 0L && len <= 32L * 1024L * 1024L) {
+                        try {
+                            java.io.RandomAccessFile(f, "rw").use { raf ->
+                                val buf = ByteArray(minOf(8192, len.toInt()))
+                                var left = len
+                                raf.seek(0)
+                                while (left > 0) {
+                                    val n = minOf(buf.size.toLong(), left).toInt()
+                                    raf.write(buf, 0, n)
+                                    left -= n
+                                }
+                                raf.fd.sync()
+                            }
+                        } catch (_: Exception) {
+                        }
+                    }
+                }
+                f.delete()
+            }
+        }
+    }
+
+    companion object {
+        private const val TAG = "VaultRepository"
     }
 }

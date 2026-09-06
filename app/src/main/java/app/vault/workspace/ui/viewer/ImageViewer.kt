@@ -8,6 +8,8 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Movie
 import android.os.SystemClock
+import android.util.Log
+import android.widget.Toast
 import android.view.HapticFeedbackConstants
 import android.view.WindowManager
 import androidx.compose.animation.AnimatedVisibility
@@ -34,6 +36,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AspectRatio
+import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.Flip
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -53,6 +56,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -70,9 +74,11 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.vault.workspace.image.ImageCrop
 import app.vault.workspace.ui.theme.VaultAccent
 import app.vault.workspace.ui.theme.VaultTextMuted
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
@@ -105,10 +111,10 @@ enum class SlideshowInterval(val ms: Long, val label: String) {
 }
 
 /**
- * Premium image viewer (Phase 1 + Phase 2):
+ * Premium image viewer (Phase 1–3):
  * decrypt via [loadBytes], pinch zoom, double-tap toward point, clamped pan,
  * rotate/flip, fit modes, swipe prev/next at scale≈1, HUD resolution chip,
- * slideshow, GIF playback, keep-screen-on while immersive.
+ * slideshow, GIF playback, keep-screen-on, in-vault crop (still images).
  */
 @Composable
 fun ImageViewer(
@@ -124,6 +130,8 @@ fun ImageViewer(
     onSlideshowPlayingChange: (Boolean) -> Unit = {},
     slideshowIntervalMs: Long = SlideshowInterval.Default.ms,
     onSlideshowIntervalMsChange: (Long) -> Unit = {},
+    /** In-vault crop: normalized rect → repository crop/replace. Null disables crop button. */
+    onCropConfirm: (suspend (left: Float, top: Float, right: Float, bottom: Float) -> Result<Unit>)? = null,
 ) {
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
     var gifMovie by remember { mutableStateOf<Movie?>(null) }
@@ -146,6 +154,11 @@ fun ImageViewer(
     val currentSlideshowPlaying by rememberUpdatedState(slideshowPlaying)
     val currentOnSlideshowPlayingChange by rememberUpdatedState(onSlideshowPlayingChange)
     val currentIntervalMs by rememberUpdatedState(interval.ms)
+    val scope = rememberCoroutineScope()
+    var reloadEpoch by remember { mutableIntStateOf(0) }
+    var cropping by remember { mutableStateOf(false) }
+    var cropBusy by remember { mutableStateOf(false) }
+    var cropNorm by remember { mutableStateOf(ImageCrop.defaultNormRect()) }
 
     // Keep screen on while immersive image viewer is showing; clear on dispose.
     DisposableEffect(Unit) {
@@ -156,7 +169,16 @@ fun ImageViewer(
         }
     }
 
-    LaunchedEffect(mimeType) {
+    LaunchedEffect(mimeType, reloadEpoch) {
+        // Reset display state on (re)load / post-crop
+        error = null
+        gifMovie = null
+        gifBytes?.fill(0)
+        gifBytes = null
+        gifCanvasBitmap?.let { if (!it.isRecycled) it.recycle() }
+        gifCanvasBitmap = null
+        bitmap?.let { if (!it.isRecycled) it.recycle() }
+        bitmap = null
         try {
             val bytes = withContext(Dispatchers.IO) { loadBytes() }
             val isGif = mimeType.equals("image/gif", ignoreCase = true)
@@ -522,9 +544,9 @@ fun ImageViewer(
             )
         }
 
-        // Premium bottom tool rail (Phase 1 transforms + Phase 2 slideshow)
+        // Premium bottom tool rail (Phase 1–2 transforms/slideshow + Phase 3 crop entry)
         AnimatedVisibility(
-            visible = controlsVisible && bitmap != null,
+            visible = controlsVisible && bitmap != null && !cropping,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter),
@@ -660,8 +682,80 @@ fun ImageViewer(
                             Text(interval.label, color = Color.White, fontSize = 10.sp)
                         }
                     }
+
+                    IconButton(onClick = {
+                        if (ImageCrop.isGifMime(mimeType) || gifMovie != null) {
+                            Toast.makeText(
+                                view.context,
+                                "Crop not available for GIFs",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                            Log.i("VaultImage", "crop skipped: GIF")
+                        } else if (onCropConfirm != null) {
+                            pauseSlideshow()
+                            resetTransform(keepFit = false)
+                            cropNorm = ImageCrop.defaultNormRect()
+                            cropping = true
+                            haptic()
+                        }
+                    }, enabled = onCropConfirm != null) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                Icons.Default.Crop,
+                                contentDescription = "Crop",
+                                tint = if (onCropConfirm != null) VaultAccent else VaultTextMuted,
+                                modifier = Modifier.size(22.dp),
+                            )
+                            Text("Crop", color = Color.White, fontSize = 10.sp)
+                        }
+                    }
                 }
             }
+        }
+
+        if (cropping && bitmap != null) {
+            ImageCropOverlay(
+                norm = cropNorm,
+                onNormChange = { cropNorm = it },
+                busy = cropBusy,
+                onCancel = {
+                    if (!cropBusy) cropping = false
+                },
+                onConfirm = {
+                    val confirm = onCropConfirm ?: return@ImageCropOverlay
+                    if (cropBusy) return@ImageCropOverlay
+                    cropBusy = true
+                    scope.launch {
+                        val n = ImageCrop.clampNormRect(
+                            cropNorm.left, cropNorm.top, cropNorm.right, cropNorm.bottom,
+                        )
+                        val result = try {
+                            confirm(n.left, n.top, n.right, n.bottom)
+                        } catch (e: Exception) {
+                            Result.failure(e)
+                        }
+                        cropBusy = false
+                        result.fold(
+                            onSuccess = {
+                                cropping = false
+                                resetTransform(keepFit = false)
+                                reloadEpoch++
+                                haptic()
+                                Toast.makeText(view.context, "Cropped", Toast.LENGTH_SHORT).show()
+                            },
+                            onFailure = { e ->
+                                Log.e("VaultImage", "crop failed", e)
+                                Toast.makeText(
+                                    view.context,
+                                    e.message ?: "Crop failed",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            },
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
         }
     }
 }

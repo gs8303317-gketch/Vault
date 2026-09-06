@@ -49,6 +49,12 @@ interface VaultItemDao {
     @Query("UPDATE vault_items SET sizeBytes = :sizeBytes WHERE id = :id")
     suspend fun setSizeBytes(id: String, sizeBytes: Long)
 
+    @Query("UPDATE vault_items SET mimeType = :mimeType WHERE id = :id")
+    suspend fun setMimeType(id: String, mimeType: String)
+
+    @Query("UPDATE vault_items SET hasThumb = :hasThumb WHERE id = :id")
+    suspend fun setHasThumb(id: String, hasThumb: Boolean)
+
     @Query("UPDATE vault_items SET folderId = :folderId WHERE id = :id")
     suspend fun setItemFolder(id: String, folderId: String?)
 

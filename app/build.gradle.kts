@@ -23,11 +23,11 @@ android {
         applicationId = "app.vault.workspace"
         minSdk = 26
         targetSdk = 35
-        versionCode = 32
-        versionName = "0.4.15"
+        versionCode = 33
+        versionName = "0.4.16"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "VERSION_NAME", "\"0.4.15\"")
-        buildConfigField("int", "VERSION_CODE", "32")
+        buildConfigField("String", "VERSION_NAME", "\"0.4.16\"")
+        buildConfigField("int", "VERSION_CODE", "33")
     }
 
     signingConfigs {
@@ -96,6 +96,7 @@ dependencies {
     androidTestImplementation(composeBom)
 
     implementation("androidx.core:core-ktx:1.15.0")
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
