@@ -1,6 +1,15 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.4.13** — removed seek indexing/prepare; lean EncryptedDataSource → ExoPlayer streaming player.
+Offline encrypted personal workspace for Android. **v0.4.14** — Phase 1 premium Image Viewer (zoom-to-point, clamp, rotate/flip, fit modes, swipe nav, tool rail).
+
+## What this release adds (v0.4.14 / versionCode 31)
+
+- **Phase 1 premium Image Viewer** (Aves/Simple/Fossify-style chrome): decrypt still via `loadBytes` (no plaintext on disk); bitmap recycled on dispose.
+- **Gestures**: double-tap zooms toward tap point (again resets); pinch 1–5; pan **clamped** to content bounds; horizontal swipe prev/next when scale≈1 (zoomed = pan only).
+- **Transform**: rotate 0/90/180/270 and flip H/V via gold-accent bottom tool rail (`graphicsLayer` rotationZ + scaleX/Y sign); Fit / Fill / Width cycle; Reset.
+- **Chrome**: tool rail + HUD `WxH` chip hide with immersive chrome (tap); haptics on rotate/flip/reset/fit like media player.
+- **Wire**: `ImageViewer` takes optional `onPrevious`/`onNext`/`title`/`controlsVisible`; `ViewerScreen` IMAGE branch passes media queue callbacks (video/audio/PDF unchanged).
+- Still **no PiP**. Out of scope: slideshow, GIF, crop/re-encrypt, filters, EXIF.
 
 ## What this release adds (v0.4.13 / versionCode 30)
 

@@ -122,6 +122,10 @@ fun ViewerScreen(
                     loadBytes = { repository.decryptFully(item.id) },
                     modifier = Modifier.fillMaxSize(),
                     onSingleTap = { toggleChrome() },
+                    onPrevious = onPreviousMedia,
+                    onNext = onNextMedia,
+                    title = item.displayName,
+                    controlsVisible = chromeVisible,
                 )
                 VaultCategory.VIDEO -> MediaPlayerScreen(
                     vatFile = repository.blobFile(item.id),
