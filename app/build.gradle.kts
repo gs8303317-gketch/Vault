@@ -23,11 +23,11 @@ android {
         applicationId = "app.vault.workspace"
         minSdk = 26
         targetSdk = 35
-        versionCode = 48
-        versionName = "0.4.31"
+        versionCode = 49
+        versionName = "0.4.32"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "VERSION_NAME", "\"0.4.31\"")
-        buildConfigField("int", "VERSION_CODE", "48")
+        buildConfigField("String", "VERSION_NAME", "\"0.4.32\"")
+        buildConfigField("int", "VERSION_CODE", "49")
     }
 
     signingConfigs {
