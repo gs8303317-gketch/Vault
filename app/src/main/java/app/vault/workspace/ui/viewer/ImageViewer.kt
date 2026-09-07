@@ -400,6 +400,12 @@ fun ImageViewer(
                                     var swipeCandidate = false
                                     val startScale = scale
                                     val center = Offset(size.width / 2f, size.height / 2f)
+                                    // Leave system gesture-nav edge zone alone at identity zoom
+                                    // so predictive / edge-back is not stolen by gallery swipe.
+                                    val edgeBackZonePx = with(density) { 28.dp.toPx() }
+                                    val startedInEdgeBackZone =
+                                        down.position.x < edgeBackZonePx ||
+                                            down.position.x > size.width - edgeBackZonePx
 
                                     while (true) {
                                         val event = awaitPointerEvent()
@@ -438,9 +444,11 @@ fun ImageViewer(
                                                 if (multi || mostlyZoom || canPanContent) {
                                                     lockedToTransform = true
                                                     pauseSlideshow()
-                                                } else {
+                                                } else if (!startedInEdgeBackZone) {
                                                     swipeCandidate = true
                                                 }
+                                                // Else: edge-origin drag at zoom≈1 — do not
+                                                // consume; let system back / gesture nav win.
                                             }
                                         }
 

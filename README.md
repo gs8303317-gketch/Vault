@@ -1,6 +1,14 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.4.22** — Immersive document system bars + PDF pinch/pan fix.
+Offline encrypted personal workspace for Android. **v0.4.23** — Navigation motion Phase 1 + predictive back foundation.
+
+## What this release adds (v0.4.23 / versionCode 40)
+
+- **Animated NavHost transitions (Phase 1)**: Material-ish forward `slideInHorizontally` + `fadeIn` (library→settings/trash/folders/viewer, unlock→library); matching pop slide-out to end + fade. Auth routes (FirstRun / Setup / Unlock) use soft **fade + slight scale** (no harsh horizontal slide over the PIN/password/pattern pad). Specs centralized in `ui/nav/VaultTransitions.kt`.
+- **Predictive back foundation**: `android:enableOnBackInvokedCallback="true"` on `<application>`. Viewer `BackHandler` still restores system bars / pauses player via `exitViewer()` before `popBackStack()` — immersive restore from v0.4.22 kept.
+- **Edge gesture hygiene**: ImageViewer gallery swipe at zoom≈1 ignores presses that start in the left/right system-back edge zone so gesture navigation is not stolen.
+- Shared-element transitions deferred to Phase 2. Still **no INTERNET**, no PiP, no seek-prepare; lock crypto / media unchanged.
+- **Wire**: `VaultNav` NavHost defaults + per-route overrides; version **0.4.23** / versionCode **40**.
 
 ## What this release adds (v0.4.22 / versionCode 39)
 

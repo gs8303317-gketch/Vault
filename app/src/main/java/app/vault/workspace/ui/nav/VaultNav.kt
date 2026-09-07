@@ -485,11 +485,27 @@ fun VaultNav(
         modifier = Modifier
             .fillMaxSize()
             .padding(scaffoldPadding),
+        enterTransition = { VaultTransitions.forwardEnter },
+        exitTransition = { VaultTransitions.forwardExit },
+        popEnterTransition = { VaultTransitions.forwardPopEnter },
+        popExitTransition = { VaultTransitions.forwardPopExit },
     ) {
-        composable(Routes.FirstRun) {
+        composable(
+            Routes.FirstRun,
+            enterTransition = { VaultTransitions.authEnter },
+            exitTransition = { VaultTransitions.authExit },
+            popEnterTransition = { VaultTransitions.authPopEnter },
+            popExitTransition = { VaultTransitions.authPopExit },
+        ) {
             FirstRunScreen(onContinue = { nav.navigate(Routes.SetupPin) })
         }
-        composable(Routes.SetupPin) {
+        composable(
+            Routes.SetupPin,
+            enterTransition = { VaultTransitions.authEnter },
+            exitTransition = { VaultTransitions.authExit },
+            popEnterTransition = { VaultTransitions.authPopEnter },
+            popExitTransition = { VaultTransitions.authPopExit },
+        ) {
             SetupPinScreen(
                 errorMessage = setupError,
                 onLockConfirmed = { type, credential ->
@@ -507,7 +523,13 @@ fun VaultNav(
                 },
             )
         }
-        composable(Routes.Unlock) {
+        composable(
+            Routes.Unlock,
+            enterTransition = { VaultTransitions.authEnter },
+            exitTransition = { VaultTransitions.authExit },
+            popEnterTransition = { VaultTransitions.authPopEnter },
+            popExitTransition = { VaultTransitions.authPopExit },
+        ) {
             val bioReady = biometricHardware && BiometricVault.isEnabled(context)
             val lockType = session.lockType()
             UnlockScreen(
@@ -737,6 +759,10 @@ fun VaultNav(
         composable(
             Routes.Viewer,
             arguments = listOf(navArgument("id") { type = NavType.StringType }),
+            enterTransition = { VaultTransitions.viewerEnter },
+            exitTransition = { VaultTransitions.viewerExit },
+            popEnterTransition = { VaultTransitions.viewerPopEnter },
+            popExitTransition = { VaultTransitions.viewerPopExit },
         ) { entry ->
             val id = entry.arguments?.getString("id") ?: return@composable
             val fromLibrary = items.find { it.id == id }
