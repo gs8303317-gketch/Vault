@@ -53,7 +53,7 @@ fun PinDots(
             val active = i < filled
             Box(
                 modifier = Modifier
-                    .padding(horizontal = 8.dp)
+                    .padding(horizontal = 10.dp)
                     .size(if (active) 14.dp else 12.dp)
                     .clip(CircleShape)
                     .then(
@@ -81,9 +81,9 @@ fun PinPad(
     enterEnabled: Boolean = false,
     onEnter: (() -> Unit)? = null,
 ) {
-    val keySize: Dp = if (compact) 56.dp else 72.dp
-    val rowPad: Dp = if (compact) 2.dp else 6.dp
-    val digitSp = if (compact) 20.sp else 24.sp
+    val keySize: Dp = if (compact) 58.dp else 74.dp
+    val rowPad: Dp = if (compact) 4.dp else 8.dp
+    val digitSp = if (compact) 20.sp else 26.sp
     val rows = listOf(
         listOf("1", "2", "3"),
         listOf("4", "5", "6"),

@@ -15,14 +15,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.RestoreFromTrash
@@ -53,19 +57,23 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.vault.workspace.data.VaultCategory
 import app.vault.workspace.ui.library.ThumbCache
 import app.vault.workspace.data.VaultItem
 import app.vault.workspace.data.formatHumanSize
 import app.vault.workspace.data.formatReadableDate
 import app.vault.workspace.ui.theme.VaultAccent
-import app.vault.workspace.ui.theme.VaultBg
+import app.vault.workspace.ui.theme.VaultAmoled
 import app.vault.workspace.ui.theme.VaultDanger
 import app.vault.workspace.ui.theme.VaultSurface
 import app.vault.workspace.ui.theme.VaultText
 import app.vault.workspace.ui.theme.VaultTextMuted
+
+private val TrashThumbShape = RoundedCornerShape(14.dp)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -81,23 +89,46 @@ fun TrashScreen(
     var pendingHardDelete by remember { mutableStateOf<VaultItem?>(null) }
 
     Scaffold(
-        containerColor = VaultBg,
+        containerColor = VaultAmoled,
         topBar = {
             TopAppBar(
-                title = { Text("Trash") },
+                title = {
+                    Column {
+                        Text(
+                            "Trash",
+                            fontWeight = FontWeight.SemiBold,
+                            color = VaultText,
+                        )
+                        Text(
+                            if (items.isEmpty()) "Empty" else "${items.size} items",
+                            color = VaultTextMuted,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontSize = 12.sp,
+                        )
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = VaultText,
+                        )
                     }
                 },
                 actions = {
                     if (items.isNotEmpty()) {
                         TextButton(onClick = { confirmEmpty = true }) {
-                            Text("Empty", color = VaultDanger)
+                            Text("Empty", color = VaultDanger, fontWeight = FontWeight.SemiBold)
                         }
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = VaultBg),
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = VaultAmoled,
+                    titleContentColor = VaultText,
+                    navigationIconContentColor = VaultText,
+                    actionIconContentColor = VaultDanger,
+                ),
             )
         },
     ) { padding ->
@@ -108,20 +139,43 @@ fun TrashScreen(
         ) {
             if (items.isEmpty()) {
                 Column(
-                    Modifier.align(Alignment.Center).padding(32.dp),
+                    Modifier
+                        .align(Alignment.Center)
+                        .padding(horizontal = 36.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Text("Trash is empty", style = MaterialTheme.typography.titleLarge)
+                    Box(
+                        modifier = Modifier
+                            .size(88.dp)
+                            .clip(CircleShape)
+                            .background(VaultSurface),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Default.DeleteOutline,
+                            contentDescription = null,
+                            tint = VaultAccent,
+                            modifier = Modifier.size(40.dp),
+                        )
+                    }
+                    Text(
+                        "Trash is empty",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = VaultText,
+                    )
                     Text(
                         "Items you move to trash appear here.",
                         color = VaultTextMuted,
                         style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.widthIn(max = 280.dp),
                     )
                 }
             } else {
                 LazyVerticalGrid(
-                    columns = GridCells.Adaptive(minSize = 140.dp),
-                    contentPadding = PaddingValues(8.dp),
+                    columns = GridCells.Adaptive(minSize = 104.dp),
+                    contentPadding = PaddingValues(10.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxSize(),
@@ -143,9 +197,14 @@ fun TrashScreen(
         AlertDialog(
             onDismissRequest = { confirmEmpty = false },
             properties = VaultMotion.dialogProperties,
-            title = { Text("Empty trash?") },
+            title = {
+                Text("Empty trash?", fontWeight = FontWeight.SemiBold, color = VaultText)
+            },
             text = {
-                Text("Permanently delete ${items.size} item(s)? This cannot be undone.")
+                Text(
+                    "Permanently delete ${items.size} item(s)? This cannot be undone.",
+                    color = VaultTextMuted,
+                )
             },
             confirmButton = {
                 TextButton(
@@ -159,7 +218,7 @@ fun TrashScreen(
             },
             dismissButton = {
                 TextButton(onClick = { confirmEmpty = false }) {
-                    Text("Cancel")
+                    Text("Cancel", color = VaultTextMuted)
                 }
             },
             containerColor = VaultSurface,
@@ -171,9 +230,14 @@ fun TrashScreen(
             onDismissRequest = { pendingHardDelete = null },
             properties = VaultMotion.dialogProperties,
             containerColor = VaultSurface,
-            title = { Text("Delete forever?") },
+            title = {
+                Text("Delete forever?", fontWeight = FontWeight.SemiBold, color = VaultText)
+            },
             text = {
-                Text("“${item.displayName}” will be permanently deleted.")
+                Text(
+                    "“${item.displayName}” will be permanently deleted.",
+                    color = VaultTextMuted,
+                )
             },
             confirmButton = {
                 TextButton(
@@ -187,7 +251,7 @@ fun TrashScreen(
             },
             dismissButton = {
                 TextButton(onClick = { pendingHardDelete = null }) {
-                    Text("Cancel")
+                    Text("Cancel", color = VaultTextMuted)
                 }
             },
         )
@@ -218,7 +282,7 @@ private fun TrashCard(
             .fillMaxWidth()
             .aspectRatio(0.85f),
         colors = CardDefaults.cardColors(containerColor = VaultSurface),
-        shape = MaterialTheme.shapes.medium,
+        shape = TrashThumbShape,
     ) {
         Column(Modifier.fillMaxSize()) {
             Box(
@@ -233,7 +297,7 @@ private fun TrashCard(
                         contentDescription = item.displayName,
                         modifier = Modifier
                             .fillMaxSize()
-                            .clip(MaterialTheme.shapes.medium),
+                            .clip(TrashThumbShape),
                         contentScale = ContentScale.Crop,
                     )
                     Box(
@@ -243,7 +307,7 @@ private fun TrashCard(
                             .height(48.dp)
                             .background(
                                 Brush.verticalGradient(
-                                    listOf(Color.Transparent, Color(0xCC0B0C0E)),
+                                    listOf(Color.Transparent, Color(0xCC000000)),
                                 ),
                             ),
                     )

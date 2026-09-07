@@ -14,7 +14,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import app.vault.workspace.import.extractShareUris
 import app.vault.workspace.ui.nav.VaultNav
-import app.vault.workspace.ui.theme.VaultBg
+import app.vault.workspace.ui.theme.VaultAmoled
 import app.vault.workspace.ui.theme.VaultTheme
 
 /**
@@ -31,7 +31,7 @@ class MainActivity : FragmentActivity() {
         val app = application as VaultApp
         setContent {
             VaultTheme {
-                Surface(modifier = Modifier.fillMaxSize(), color = VaultBg) {
+                Surface(modifier = Modifier.fillMaxSize(), color = VaultAmoled) {
                     VaultNav(
                         session = app.session,
                         repository = app.repository,

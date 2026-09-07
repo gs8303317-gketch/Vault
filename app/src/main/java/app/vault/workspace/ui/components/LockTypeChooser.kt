@@ -24,10 +24,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.vault.workspace.auth.LockType
 import app.vault.workspace.ui.theme.VaultAccent
 import app.vault.workspace.ui.theme.VaultSurface
+import app.vault.workspace.ui.theme.VaultText
 import app.vault.workspace.ui.theme.VaultTextMuted
 
 /**
@@ -42,26 +44,29 @@ fun LockTypeChooser(
     /** When true, tapping a card both selects and invokes [onSelect] (caller may advance). */
     compact: Boolean = false,
 ) {
-    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 14.dp),
+    ) {
         LockType.entries.forEach { type ->
             val isSelected = type == selected
             val shape = RoundedCornerShape(18.dp)
             Surface(
-                color = if (isSelected) VaultAccent.copy(alpha = 0.12f) else VaultSurface,
+                color = if (isSelected) VaultAccent.copy(alpha = 0.14f) else VaultSurface,
                 shape = shape,
                 modifier = Modifier
                     .fillMaxWidth()
                     .border(
                         width = if (isSelected) 2.dp else 1.dp,
-                        color = if (isSelected) VaultAccent else VaultAccent.copy(alpha = 0.25f),
+                        color = if (isSelected) VaultAccent else VaultAccent.copy(alpha = 0.22f),
                         shape = shape,
                     )
                     .clickable { onSelect(type) },
             ) {
                 Row(
                     Modifier.padding(
-                        horizontal = 18.dp,
-                        vertical = if (compact) 16.dp else 20.dp,
+                        horizontal = 20.dp,
+                        vertical = if (compact) 16.dp else 22.dp,
                     ),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -73,17 +78,22 @@ fun LockTypeChooser(
                         },
                         contentDescription = type.displayName,
                         tint = VaultAccent,
-                        modifier = Modifier.size(if (compact) 32.dp else 40.dp),
+                        modifier = Modifier.size(if (compact) 30.dp else 38.dp),
                     )
-                    Spacer(Modifier.size(16.dp))
+                    Spacer(Modifier.size(18.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(type.displayName, style = MaterialTheme.typography.titleLarge)
-                        Spacer(Modifier.height(2.dp))
+                        Text(
+                            type.displayName,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = VaultText,
+                        )
+                        Spacer(Modifier.height(4.dp))
                         Text(
                             when (type) {
-                                LockType.PIN -> "4–6 digits · PIN"
-                                LockType.PASSWORD -> "6–10 characters · Password"
-                                LockType.PATTERN -> "Connect ≥4 dots · Pattern"
+                                LockType.PIN -> "4–6 digits · quick unlock"
+                                LockType.PASSWORD -> "6–10 characters · strongest"
+                                LockType.PATTERN -> "Connect ≥4 dots · visual"
                             },
                             style = MaterialTheme.typography.bodyMedium,
                             color = VaultTextMuted,

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -37,7 +38,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.vault.workspace.auth.LockRules
 import app.vault.workspace.auth.LockType
 import app.vault.workspace.ui.components.PasswordLockField
@@ -45,9 +49,10 @@ import app.vault.workspace.ui.components.PatternLock
 import app.vault.workspace.ui.components.PinDots
 import app.vault.workspace.ui.components.PinPad
 import app.vault.workspace.ui.theme.VaultAccent
-import app.vault.workspace.ui.theme.VaultBg
+import app.vault.workspace.ui.theme.VaultAmoled
 import app.vault.workspace.ui.theme.VaultDanger
 import app.vault.workspace.ui.theme.VaultSurface
+import app.vault.workspace.ui.theme.VaultText
 import app.vault.workspace.ui.theme.VaultTextMuted
 import kotlinx.coroutines.delay
 
@@ -94,6 +99,7 @@ fun UnlockScreen(
     val landscape =
         LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     val pinSlots = pinLength.coerceIn(LockRules.PIN_MIN, LockRules.PIN_MAX)
+    val showBiometric = biometricAvailable && onBiometricUnlock != null && enabled
 
     fun digit(c: Char) {
         if (!enabled) return
@@ -119,26 +125,29 @@ fun UnlockScreen(
     }
 
     @Composable
-    fun BrandHeader(compact: Boolean) {
-        if (!compact) {
-            Spacer(Modifier.height(36.dp))
-        }
+    fun BrandMark(compact: Boolean) {
+        val shield = if (compact) 52.dp else 76.dp
+        val icon = if (compact) 26.dp else 38.dp
         Box(
             modifier = Modifier
-                .size(if (compact) 56.dp else 72.dp)
-                .clip(RoundedCornerShape(20.dp))
+                .size(shield)
+                .clip(RoundedCornerShape(if (compact) 16.dp else 22.dp))
                 .background(VaultSurface)
-                .border(1.dp, VaultAccent.copy(alpha = 0.45f), RoundedCornerShape(20.dp)),
+                .border(
+                    width = 1.5.dp,
+                    color = VaultAccent.copy(alpha = 0.55f),
+                    shape = RoundedCornerShape(if (compact) 16.dp else 22.dp),
+                ),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 Icons.Default.Shield,
                 contentDescription = null,
                 tint = VaultAccent,
-                modifier = Modifier.size(if (compact) 28.dp else 36.dp),
+                modifier = Modifier.size(icon),
             )
         }
-        Spacer(Modifier.height(if (compact) 10.dp else 16.dp))
+        Spacer(Modifier.height(if (compact) 12.dp else 20.dp))
         Text(
             "Vault",
             style = if (compact) {
@@ -146,42 +155,58 @@ fun UnlockScreen(
             } else {
                 MaterialTheme.typography.headlineLarge
             },
+            fontWeight = FontWeight.SemiBold,
+            color = VaultText,
+            letterSpacing = 1.2.sp,
         )
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(6.dp))
         Text(
             lockType.unlockPrompt,
             style = MaterialTheme.typography.bodyMedium,
             color = VaultTextMuted,
+            textAlign = TextAlign.Center,
         )
-        Spacer(Modifier.height(if (compact) 10.dp else 18.dp))
+        Spacer(Modifier.height(if (compact) 8.dp else 14.dp))
         when {
             remaining > 0 -> Text(
                 "Try again in ${formatDuration(remaining)}",
                 color = VaultDanger,
                 style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
             )
             errorMessage != null -> Text(
                 errorMessage,
                 color = VaultDanger,
                 style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
             )
+            else -> Spacer(Modifier.height(20.dp))
         }
-        if (biometricAvailable && onBiometricUnlock != null && enabled) {
-            Spacer(Modifier.height(8.dp))
+    }
+
+    @Composable
+    fun BiometricControl(compact: Boolean) {
+        if (!showBiometric) return
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
             IconButton(
-                onClick = onBiometricUnlock,
-                modifier = Modifier.size(if (compact) 48.dp else 56.dp),
+                onClick = onBiometricUnlock!!,
+                modifier = Modifier
+                    .size(if (compact) 48.dp else 56.dp)
+                    .clip(CircleShape)
+                    .background(VaultSurface)
+                    .border(1.dp, VaultAccent.copy(alpha = 0.4f), CircleShape),
             ) {
                 Icon(
                     Icons.Default.Fingerprint,
                     contentDescription = "Unlock with biometrics",
                     tint = VaultAccent,
-                    modifier = Modifier.size(if (compact) 32.dp else 40.dp),
+                    modifier = Modifier.size(if (compact) 28.dp else 32.dp),
                 )
             }
             if (!compact) {
+                Spacer(Modifier.height(4.dp))
                 TextButton(onClick = onBiometricUnlock) {
-                    Text("Unlock with biometrics", color = VaultAccent)
+                    Text("Use biometrics", color = VaultAccent)
                 }
             }
         }
@@ -192,7 +217,7 @@ fun UnlockScreen(
         when (lockType) {
             LockType.PIN -> {
                 PinDots(filled = pin.length, slotCount = pinSlots)
-                Spacer(Modifier.height(if (compact) 8.dp else 16.dp))
+                Spacer(Modifier.height(if (compact) 10.dp else 20.dp))
                 PinPad(
                     enabled = enabled,
                     onDigit = ::digit,
@@ -230,13 +255,13 @@ fun UnlockScreen(
     Box(
         Modifier
             .fillMaxSize()
-            .background(VaultBg),
+            .background(VaultAmoled),
     ) {
         if (landscape) {
             Row(
                 Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 24.dp, vertical = 12.dp),
+                    .padding(horizontal = 28.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(
@@ -244,17 +269,21 @@ fun UnlockScreen(
                         .weight(1f)
                         .fillMaxHeight()
                         .verticalScroll(rememberScrollState())
-                        .padding(end = 12.dp),
+                        .padding(end = 16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                 ) {
-                    BrandHeader(compact = true)
+                    BrandMark(compact = true)
+                    Spacer(Modifier.height(12.dp))
+                    BiometricControl(compact = true)
                 }
                 Column(
                     Modifier
                         .weight(1.15f)
-                        .width(340.dp),
+                        .width(360.dp)
+                        .padding(start = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
                 ) {
                     CredentialPanel(compact = true)
                 }
@@ -263,13 +292,16 @@ fun UnlockScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(24.dp),
+                    .padding(horizontal = 28.dp, vertical = 20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                BrandHeader(compact = false)
+                Spacer(Modifier.height(28.dp))
+                BrandMark(compact = false)
                 Spacer(Modifier.weight(1f))
                 CredentialPanel(compact = false)
                 Spacer(Modifier.height(20.dp))
+                BiometricControl(compact = false)
+                Spacer(Modifier.height(12.dp))
             }
         }
     }

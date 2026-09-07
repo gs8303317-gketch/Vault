@@ -1,6 +1,13 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.4.28** — Phase C premium library home: pure-black shell, top action bar, chips, denser grid.
+Offline encrypted personal workspace for Android. **v0.4.29** — Phase D login/settings/tools polish: AMOLED unlock, grouped Settings, Folders/Trash aligned with library gold.
+
+## What this release adds (v0.4.29 / versionCode 46)
+
+- **Unlock / setup canvas**: pure-black (`VaultAmoled`) unlock with refined shield wordmark, clearer lock-type prompt, improved PIN keypad / pattern / password spacing; biometric control placed under the credential panel (portrait) or beside brand (landscape). First-run welcome + setup chooser match the same AMOLED + gold language; lock-type cards typography/spacing polished.
+- **Settings**: grouped **Security / Library / About / Danger** sections with premium list rows (icon chips, dividers, chevrons). Change lock, biometric, auto-lock, storage hierarchy clearer. Top app bar matches Library (AMOLED, semibold title + muted subtitle).
+- **Folders + Trash**: AMOLED shells, Library-style top bars, circular gold empty states, gold FAB; folder rows as surface cards; trash denser adaptive grid (~104dp) with 14dp rounded thumbs. Dialogs keep Phase 3 motion with `VaultSurface` cohesion.
+- **Wire**: version **0.4.29** / versionCode **46**. Still **no INTERNET**, no PiP, no seek-prepare. Lock crypto, biometrics, encryption, and Phase A–C behavior unchanged. **Phases A–D of this polish track complete.**
 
 ## What this release adds (v0.4.28 / versionCode 45)
 
@@ -9,7 +16,7 @@ Offline encrypted personal workspace for Android. **v0.4.28** — Phase C premiu
 - **Grid density**: tighter gutters, adaptive min tile ~104dp (comfortable 160dp), **14dp rounded** thumbs; VIDEO/AUDIO/DOC/FILE type badges on cards; selection mode **Select all**.
 - **Empty states**: circular gold icon + short copy (empty vault / no matches / no favorites).
 - **Bottom nav**: black bar, tonalElevation 0, filled/outlined icons, gold selected accent — still only Library / Folders / Settings.
-- **Wire**: version **0.4.28** / versionCode **45**. Still **no INTERNET**, no PiP, no seek-prepare. Encryption / shared elements / Phase A–B behavior unchanged. Phase D (login/settings polish) next.
+- **Wire**: version **0.4.28** / versionCode **45**. Still **no INTERNET**, no PiP, no seek-prepare. Encryption / shared elements / Phase A–B behavior unchanged.
 
 ## What this release adds (v0.4.27 / versionCode 44)
 

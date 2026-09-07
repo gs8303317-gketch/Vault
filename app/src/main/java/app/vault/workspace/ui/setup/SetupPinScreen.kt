@@ -1,6 +1,7 @@
 package app.vault.workspace.ui.setup
 
 import android.content.res.Configuration
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -22,6 +23,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
@@ -33,7 +35,9 @@ import app.vault.workspace.ui.components.PatternLock
 import app.vault.workspace.ui.components.PinDots
 import app.vault.workspace.ui.components.PinPad
 import app.vault.workspace.ui.theme.VaultAccent
+import app.vault.workspace.ui.theme.VaultAmoled
 import app.vault.workspace.ui.theme.VaultDanger
+import app.vault.workspace.ui.theme.VaultText
 import app.vault.workspace.ui.theme.VaultTextMuted
 
 private enum class SetupStep {
@@ -70,29 +74,33 @@ fun SetupPinScreen(
             Column(
                 Modifier
                     .fillMaxSize()
-                    .padding(24.dp)
+                    .background(VaultAmoled)
+                    .padding(horizontal = 24.dp, vertical = 20.dp)
                     .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Spacer(Modifier.height(28.dp))
+                Spacer(Modifier.height(32.dp))
                 Text(
                     "Choose lock type",
                     style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = VaultText,
                 )
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(8.dp))
                 Text(
                     "Lock type choose karo — PIN, Password, or Pattern",
                     style = MaterialTheme.typography.titleMedium,
                     color = VaultAccent,
+                    fontWeight = FontWeight.Medium,
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(10.dp))
                 Text(
                     "Tap a big card below. You can change this later in Settings. " +
                         "Credential cannot be recovered.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = VaultTextMuted,
                 )
-                Spacer(Modifier.height(28.dp))
+                Spacer(Modifier.height(32.dp))
                 LockTypeChooser(
                     selected = lockType,
                     onSelect = { chosen ->
@@ -210,7 +218,7 @@ fun SetupPinScreen(
                 ) {
                     Text("Back", color = VaultAccent)
                 }
-                Text(title, style = MaterialTheme.typography.titleLarge)
+                Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, color = VaultText)
                 Spacer(Modifier.height(8.dp))
                 Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = VaultTextMuted)
                 Spacer(Modifier.height(if (landscape) 12.dp else 24.dp))
@@ -271,6 +279,7 @@ fun SetupPinScreen(
                 Row(
                     Modifier
                         .fillMaxSize()
+                        .background(VaultAmoled)
                         .padding(horizontal = 24.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -298,7 +307,8 @@ fun SetupPinScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(24.dp),
+                        .background(VaultAmoled)
+                        .padding(horizontal = 28.dp, vertical = 20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Header()

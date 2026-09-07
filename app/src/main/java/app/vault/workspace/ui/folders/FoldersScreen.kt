@@ -2,6 +2,8 @@ package app.vault.workspace.ui.folders
 
 import app.vault.workspace.ui.nav.VaultMotion
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -10,11 +12,16 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -31,6 +38,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -43,13 +51,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import app.vault.workspace.data.VaultFolder
 import app.vault.workspace.ui.theme.VaultAccent
-import app.vault.workspace.ui.theme.VaultSurface
-import app.vault.workspace.ui.theme.VaultBg
+import app.vault.workspace.ui.theme.VaultAmoled
 import app.vault.workspace.ui.theme.VaultDanger
 import app.vault.workspace.ui.theme.VaultOnAccent
+import app.vault.workspace.ui.theme.VaultSurface
+import app.vault.workspace.ui.theme.VaultText
 import app.vault.workspace.ui.theme.VaultTextMuted
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -69,16 +81,39 @@ fun FoldersScreen(
     var renameName by remember { mutableStateOf("") }
 
     Scaffold(
-        containerColor = VaultBg,
+        containerColor = VaultAmoled,
         topBar = {
             TopAppBar(
-                title = { Text("Folders") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                title = {
+                    Column {
+                        Text(
+                            "Folders",
+                            fontWeight = FontWeight.SemiBold,
+                            color = VaultText,
+                        )
+                        Text(
+                            if (folders.isEmpty()) "No folders yet" else "${folders.size} folders",
+                            color = VaultTextMuted,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontSize = 12.sp,
+                        )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = VaultBg),
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = VaultText,
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = VaultAmoled,
+                    titleContentColor = VaultText,
+                    navigationIconContentColor = VaultText,
+                    actionIconContentColor = VaultAccent,
+                ),
             )
         },
         floatingActionButton = {
@@ -107,18 +142,36 @@ fun FoldersScreen(
                     .padding(padding),
                 contentAlignment = Alignment.Center,
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        Icons.Default.CreateNewFolder,
-                        contentDescription = null,
-                        tint = VaultAccent,
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.padding(horizontal = 36.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(88.dp)
+                            .clip(CircleShape)
+                            .background(VaultSurface),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Default.CreateNewFolder,
+                            contentDescription = null,
+                            tint = VaultAccent,
+                            modifier = Modifier.size(40.dp),
+                        )
+                    }
+                    Text(
+                        "No folders yet",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = VaultText,
                     )
-                    Text("No folders yet", style = MaterialTheme.typography.titleLarge)
                     Text(
                         "Tap + to create a folder, then move items into it.",
                         color = VaultTextMuted,
                         style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(horizontal = 32.dp, vertical = 8.dp),
+                        modifier = Modifier.widthIn(max = 280.dp),
                     )
                 }
             }
@@ -127,59 +180,92 @@ fun FoldersScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
-                contentPadding = PaddingValues(8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(folders, key = { it.id }) { folder ->
-                    ListItem(
-                        headlineContent = { Text(folder.name) },
-                        leadingContent = {
-                            Icon(Icons.Default.Folder, contentDescription = null, tint = VaultAccent)
-                        },
-                        trailingContent = {
-                            Row {
-                                IconButton(
-                                    onClick = {
-                                        renameName = folder.name
-                                        pendingRename = folder
-                                    },
-                                ) {
-                                    Icon(
-                                        Icons.Default.Edit,
-                                        contentDescription = "Rename folder",
-                                        tint = VaultAccent,
-                                    )
-                                }
-                                IconButton(onClick = { pendingDelete = folder }) {
-                                    Icon(
-                                        Icons.Default.Delete,
-                                        contentDescription = "Delete folder",
-                                        tint = VaultDanger,
-                                    )
-                                }
-                            }
-                        },
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(VaultSurface)
+                            .border(1.dp, VaultAccent.copy(alpha = 0.1f), RoundedCornerShape(14.dp))
                             .combinedClickable(
                                 onClick = { onOpenFolder(folder) },
                                 onLongClick = {
                                     renameName = folder.name
                                     pendingRename = folder
                                 },
-                            ),
-                    )
+                            )
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(VaultAccent.copy(alpha = 0.12f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                Icons.Default.Folder,
+                                contentDescription = null,
+                                tint = VaultAccent,
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
+                        Spacer(Modifier.size(14.dp))
+                        Text(
+                            folder.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = VaultText,
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(
+                            onClick = {
+                                renameName = folder.name
+                                pendingRename = folder
+                            },
+                        ) {
+                            Icon(
+                                Icons.Default.Edit,
+                                contentDescription = "Rename folder",
+                                tint = VaultAccent,
+                            )
+                        }
+                        IconButton(onClick = { pendingDelete = folder }) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "Delete folder",
+                                tint = VaultDanger,
+                            )
+                        }
+                    }
                 }
             }
         }
     }
+
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = VaultAccent,
+        unfocusedBorderColor = VaultAccent.copy(alpha = 0.35f),
+        focusedLabelColor = VaultAccent,
+        cursorColor = VaultAccent,
+        focusedTextColor = VaultText,
+        unfocusedTextColor = VaultText,
+        focusedContainerColor = VaultAmoled,
+        unfocusedContainerColor = VaultAmoled,
+    )
 
     if (showCreate) {
         AlertDialog(
             onDismissRequest = { showCreate = false },
             properties = VaultMotion.dialogProperties,
             containerColor = VaultSurface,
-            title = { Text("New folder") },
+            title = {
+                Text("New folder", fontWeight = FontWeight.SemiBold, color = VaultText)
+            },
             text = {
                 OutlinedTextField(
                     value = newName,
@@ -187,6 +273,8 @@ fun FoldersScreen(
                     singleLine = true,
                     label = { Text("Name") },
                     modifier = Modifier.fillMaxWidth(),
+                    colors = fieldColors,
+                    shape = RoundedCornerShape(14.dp),
                 )
             },
             confirmButton = {
@@ -201,18 +289,21 @@ fun FoldersScreen(
                 ) { Text("Create", color = VaultAccent) }
             },
             dismissButton = {
-                TextButton(onClick = { showCreate = false }) { Text("Cancel") }
+                TextButton(onClick = { showCreate = false }) {
+                    Text("Cancel", color = VaultTextMuted)
+                }
             },
         )
     }
-
 
     pendingRename?.let { folder ->
         AlertDialog(
             onDismissRequest = { pendingRename = null },
             properties = VaultMotion.dialogProperties,
             containerColor = VaultSurface,
-            title = { Text("Rename folder") },
+            title = {
+                Text("Rename folder", fontWeight = FontWeight.SemiBold, color = VaultText)
+            },
             text = {
                 OutlinedTextField(
                     value = renameName,
@@ -220,6 +311,8 @@ fun FoldersScreen(
                     singleLine = true,
                     label = { Text("Name") },
                     modifier = Modifier.fillMaxWidth(),
+                    colors = fieldColors,
+                    shape = RoundedCornerShape(14.dp),
                 )
             },
             confirmButton = {
@@ -234,7 +327,9 @@ fun FoldersScreen(
                 ) { Text("Rename", color = VaultAccent) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingRename = null }) { Text("Cancel") }
+                TextButton(onClick = { pendingRename = null }) {
+                    Text("Cancel", color = VaultTextMuted)
+                }
             },
         )
     }
@@ -244,10 +339,13 @@ fun FoldersScreen(
             onDismissRequest = { pendingDelete = null },
             properties = VaultMotion.dialogProperties,
             containerColor = VaultSurface,
-            title = { Text("Delete folder?") },
+            title = {
+                Text("Delete folder?", fontWeight = FontWeight.SemiBold, color = VaultText)
+            },
             text = {
                 Text(
                     "“${folder.name}” will be deleted. Items inside move back to the main library (not trash).",
+                    color = VaultTextMuted,
                 )
             },
             confirmButton = {
@@ -259,7 +357,9 @@ fun FoldersScreen(
                 ) { Text("Delete", color = VaultDanger) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingDelete = null }) { Text("Cancel") }
+                TextButton(onClick = { pendingDelete = null }) {
+                    Text("Cancel", color = VaultTextMuted)
+                }
             },
         )
     }
@@ -275,11 +375,13 @@ fun MoveToFolderDialog(
         onDismissRequest = onDismiss,
         properties = VaultMotion.dialogProperties,
         containerColor = VaultSurface,
-        title = { Text("Move to folder") },
+        title = {
+            Text("Move to folder", fontWeight = FontWeight.SemiBold, color = VaultText)
+        },
         text = {
             Column {
                 ListItem(
-                    headlineContent = { Text("No folder (library root)") },
+                    headlineContent = { Text("No folder (library root)", color = VaultText) },
                     leadingContent = {
                         Icon(Icons.Default.Folder, contentDescription = null, tint = VaultTextMuted)
                     },
@@ -290,7 +392,7 @@ fun MoveToFolderDialog(
                 )
                 folders.forEach { folder ->
                     ListItem(
-                        headlineContent = { Text(folder.name) },
+                        headlineContent = { Text(folder.name, color = VaultText) },
                         leadingContent = {
                             Icon(Icons.Default.Folder, contentDescription = null, tint = VaultAccent)
                         },
@@ -311,7 +413,7 @@ fun MoveToFolderDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text("Cancel", color = VaultTextMuted) }
         },
     )
 }
