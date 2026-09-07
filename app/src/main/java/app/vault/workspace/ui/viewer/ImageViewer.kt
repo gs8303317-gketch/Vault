@@ -580,7 +580,7 @@ fun ImageViewer(
                                             resetTransform(keepFit = false)
                                             reloadEpoch++
                                             haptic()
-                                            Toast.makeText(view.context, "Cropped", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(view.context, "Saved", Toast.LENGTH_SHORT).show()
                                         },
                                         onFailure = { e ->
                                             Log.e("VaultImage", "crop failed", e)

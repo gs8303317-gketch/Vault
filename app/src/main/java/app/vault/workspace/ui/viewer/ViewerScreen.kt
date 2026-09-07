@@ -105,15 +105,18 @@ fun ViewerScreen(
     val view = LocalView.current
     val context = LocalContext.current
 
+    val isPdfDocument = item.category == VaultCategory.DOCUMENT &&
+        item.mimeType.equals("application/pdf", ignoreCase = true)
     val immersive = item.category == VaultCategory.IMAGE ||
-        item.category == VaultCategory.VIDEO
+        item.category == VaultCategory.VIDEO ||
+        isPdfDocument
 
     // Auto-hide chrome for images; tool-rail taps bump [chromeBump] to reset the timer.
     // Video chrome follows MediaPlayer controls (not this timer).
-    LaunchedEffect(chromeVisible, chromeBump, immersive, item.category, item.id) {
+    LaunchedEffect(chromeVisible, chromeBump, immersive, item.category, item.id, isPdfDocument) {
         if (immersive &&
-            item.category == VaultCategory.IMAGE &&
-            chromeVisible
+            chromeVisible &&
+            (item.category == VaultCategory.IMAGE || isPdfDocument)
         ) {
             delay(3_500)
             chromeVisible = false
@@ -167,8 +170,8 @@ fun ViewerScreen(
                 .fillMaxSize()
                 .background(Color.Black),
         ) {
-            when (item.category) {
-                VaultCategory.IMAGE -> ImageViewer(
+            when {
+                item.category == VaultCategory.IMAGE -> ImageViewer(
                     loadBytes = { repository.decryptFully(item.id) },
                     mimeType = item.mimeType,
                     modifier = Modifier.fillMaxSize(),
@@ -188,7 +191,7 @@ fun ViewerScreen(
                     },
                     onControlsInteraction = { keepChromeVisible() },
                 )
-                VaultCategory.VIDEO -> MediaPlayerScreen(
+                item.category == VaultCategory.VIDEO -> MediaPlayerScreen(
                     vatFile = repository.blobFile(item.id),
                     loadDek = { repository.unwrapDek(item.id) },
                     mimeType = item.mimeType,
@@ -214,6 +217,15 @@ fun ViewerScreen(
                     onPrevious = onPreviousMedia,
                     onNext = onNextMedia,
                     modifier = Modifier.fillMaxSize(),
+                )
+                isPdfDocument -> PdfViewer(
+                    openPdfHandle = { repository.openPdfHandle(item.id) },
+                    itemId = item.id,
+                    title = item.displayName,
+                    modifier = Modifier.fillMaxSize(),
+                    onSingleTap = { toggleChrome() },
+                    controlsVisible = chromeVisible,
+                    onControlsInteraction = { keepChromeVisible() },
                 )
                 else -> {}
             }
@@ -273,9 +285,15 @@ fun ViewerScreen(
                 VaultCategory.DOCUMENT -> {
                     when {
                         item.mimeType.equals("application/pdf", ignoreCase = true) -> {
+                            // Immersive path above; fallback if chrome routing changes.
                             PdfViewer(
                                 openPdfHandle = { repository.openPdfHandle(item.id) },
+                                itemId = item.id,
+                                title = item.displayName,
                                 modifier = mod,
+                                onSingleTap = { toggleChrome() },
+                                controlsVisible = chromeVisible,
+                                onControlsInteraction = { keepChromeVisible() },
                             )
                         }
                         item.mimeType.startsWith("text/") ||

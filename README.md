@@ -1,6 +1,13 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.4.18** — Lock / auth UX: PIN 4–6, password, pattern; change lock type anytime.
+Offline encrypted personal workspace for Android. **v0.4.19** — Crop Save UX + premium PDF reader (Phase 1).
+
+## What this release adds (v0.4.19 / versionCode 36)
+
+- **Crop Save UX**: primary crop confirm button labeled **Save** (gold accent); busy shows spinner + “Saving…”; success toast **Saved** (was “Cropped”). Cancel unchanged; in-vault replace on confirm unchanged.
+- **Premium PDF (Phase 1)**: immersive tap chrome; **vertical pager** with page indicator; pinch + double-tap zoom / pan clamp; **invert / dark paper**; keep-screen-on; thumbnail strip + page grid jump (+ jump dialog); fit width / fit page; **resume last page** per item id (`PdfPageStore` / SharedPreferences).
+- **Wire / privacy**: `ViewerScreen` PDF branch immersive; passes item id + displayName. Still `EncryptedPdfHandle` (proxy/memfd/tmp wipe on dispose) — no durable plaintext temps. No Office/DOCX (Phase 3 later), no text-reader Phase 2. No PiP / seek-prepare revival.
+- **Tests**: `PdfPageStore` resume clamp unit tests; existing PDF page clamp + crop overlay tests kept.
 
 ## What this release adds (v0.4.18 / versionCode 35)
 

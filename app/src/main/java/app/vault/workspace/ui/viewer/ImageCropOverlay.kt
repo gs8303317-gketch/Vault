@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.vault.workspace.image.ImageCrop
@@ -161,20 +162,35 @@ fun ImageCropOverlay(
                 Text("Cancel", color = Color.White)
             }
             if (busy) {
-                CircularProgressIndicator(
-                    color = VaultAccent,
-                    modifier = Modifier.size(28.dp),
-                    strokeWidth = 3.dp,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    CircularProgressIndicator(
+                        color = VaultAccent,
+                        modifier = Modifier.size(22.dp),
+                        strokeWidth = 3.dp,
+                    )
+                    Text("Saving…", color = VaultAccent, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                }
             } else {
                 Text("Drag corners to crop", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
             }
             Button(
                 onClick = onConfirm,
                 enabled = !busy,
-                colors = ButtonDefaults.buttonColors(containerColor = VaultAccent),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = VaultAccent,
+                    disabledContainerColor = VaultAccent.copy(alpha = 0.55f),
+                    contentColor = Color.Black,
+                    disabledContentColor = Color.Black.copy(alpha = 0.7f),
+                ),
             ) {
-                Text("Crop", color = Color.Black)
+                Text(
+                    if (busy) "Saving…" else "Save",
+                    color = Color.Black,
+                    fontWeight = FontWeight.Bold,
+                )
             }
         }
     }
