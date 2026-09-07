@@ -154,7 +154,7 @@ fun CsvViewer(
                         Column {
                             CsvRow(p.headers, header = true)
                             LazyColumn {
-                                itemsIndexed(p.rows) { _, row ->
+                                itemsIndexed(p.rows, key = { index, _ -> index }) { _, row ->
                                     CsvRow(row, header = false)
                                 }
                             }

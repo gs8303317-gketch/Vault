@@ -18,7 +18,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
@@ -124,7 +124,7 @@ fun MarkdownViewer(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 88.dp),
                 ) {
-                    items(blocks) { block ->
+                    itemsIndexed(blocks, key = { index, _ -> index }) { _, block ->
                         MarkdownBlockView(block)
                         Spacer(Modifier.height(10.dp))
                     }

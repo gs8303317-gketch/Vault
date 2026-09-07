@@ -23,11 +23,11 @@ android {
         applicationId = "app.vault.workspace"
         minSdk = 26
         targetSdk = 35
-        versionCode = 47
-        versionName = "0.4.30"
+        versionCode = 48
+        versionName = "0.4.31"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "VERSION_NAME", "\"0.4.30\"")
-        buildConfigField("int", "VERSION_CODE", "47")
+        buildConfigField("String", "VERSION_NAME", "\"0.4.31\"")
+        buildConfigField("int", "VERSION_CODE", "48")
     }
 
     signingConfigs {
@@ -43,7 +43,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

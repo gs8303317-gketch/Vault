@@ -25,9 +25,6 @@ interface VaultItemDao {
     @Query("SELECT * FROM vault_items WHERE deletedAt IS NOT NULL ORDER BY deletedAt DESC")
     fun observeTrash(): Flow<List<VaultItemEntity>>
 
-    @Query("SELECT * FROM vault_items WHERE deletedAt IS NULL AND favorite = 1 ORDER BY createdAt DESC")
-    fun observeFavorites(): Flow<List<VaultItemEntity>>
-
     @Query("SELECT * FROM vault_items WHERE id = :id LIMIT 1")
     suspend fun getById(id: String): VaultItemEntity?
 
@@ -42,9 +39,6 @@ interface VaultItemDao {
 
     @Query("UPDATE vault_items SET favorite = :favorite WHERE id = :id")
     suspend fun setFavorite(id: String, favorite: Boolean)
-
-    @Query("UPDATE vault_items SET seekReady = :seekReady WHERE id = :id")
-    suspend fun setSeekReady(id: String, seekReady: Boolean)
 
     @Query("UPDATE vault_items SET sizeBytes = :sizeBytes WHERE id = :id")
     suspend fun setSizeBytes(id: String, sizeBytes: Long)

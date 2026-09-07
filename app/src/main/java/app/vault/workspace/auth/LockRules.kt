@@ -12,10 +12,6 @@ object LockRules {
     const val PATTERN_MIN_POINTS = 4
     const val PATTERN_CELLS = 9
 
-    /** @deprecated Use [PIN_MAX]; kept for older call sites expecting a single length. */
-    @Deprecated("Variable PIN length 4–6", ReplaceWith("PIN_MAX"))
-    const val PIN_LENGTH = PIN_MAX
-
     private val WEAK_PIN_4 = setOf(
         "0000", "1111", "2222", "3333", "4444", "5555", "6666", "7777", "8888", "9999",
         "1234", "4321", "1212", "2580", "1122", "6969", "1004", "2000", "1313",
@@ -121,14 +117,4 @@ object LockRules {
             LockType.PASSWORD -> isValidPasswordFormat(secret)
             LockType.PATTERN -> isValidPatternFormat(secret)
         }
-}
-
-/** @deprecated Prefer [LockRules]; thin aliases for transitional call sites. */
-@Deprecated("Use LockRules", ReplaceWith("LockRules"))
-object PinRules {
-    const val PIN_LENGTH = LockRules.PIN_MAX
-    fun isExactFourDigits(pin: String): Boolean =
-        pin.length == 4 && pin.all { it.isDigit() }
-    fun isWeak(pin: String): Boolean = LockRules.isWeakPin(pin)
-    fun validateNewPin(pin: String): String? = LockRules.validateNewPin(pin)
 }

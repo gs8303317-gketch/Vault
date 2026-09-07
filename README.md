@@ -1,6 +1,14 @@
 # Cyphr
 
-Offline encrypted personal workspace for Android (display name **Cyphr**; package `app.vault.workspace` unchanged for upgrades). **v0.4.30** — nested-folder back stack, hub back-to-Library, Cyphr branding + icon.
+Offline encrypted personal workspace for Android (display name **Cyphr**; package `app.vault.workspace` unchanged for upgrades). **v0.4.31** — safe cleanup, release minify/shrink, list stability.
+
+## What this release adds (v0.4.31 / versionCode 48)
+
+- **Dead code**: removed unused deprecated `PinRules` alias + `LockRules.PIN_LENGTH`; removed unused Room DAO methods `observeFavorites` / `setSeekReady` (favorites still filter in-memory; `seekReady` column retained).
+- **Deps / assets**: no launcher mipmap/drawable removals (kept intentionally). Unused XML colors / `lifecycle-viewmodel-compose` / preview dep left in place when removal risk unclear.
+- **Release size**: `isMinifyEnabled` + `isShrinkResources` for **release** only; debug unchanged. ProGuard keep rules for Room, Media3, crypto, entry points.
+- **Smoothness**: `itemsIndexed` keys on Markdown + CSV lazy lists (library/trash/folders/PDF already keyed; ThumbCache / `remember(asImageBitmap)` from v0.4.27 unchanged).
+- **Wire**: version **0.4.31** / versionCode **48**. Still **no INTERNET**, no PiP, no seek-prepare. Encryption / `applicationId` / nav from v0.4.30 unchanged.
 
 ## What this release adds (v0.4.30 / versionCode 47)
 
