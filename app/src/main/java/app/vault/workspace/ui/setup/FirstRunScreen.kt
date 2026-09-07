@@ -61,7 +61,7 @@ fun FirstRunScreen(onContinue: () -> Unit) {
         }
         Spacer(Modifier.height(28.dp))
         Text(
-            "Welcome to Vault",
+            "Welcome to Cyphr",
             style = MaterialTheme.typography.headlineLarge,
             fontWeight = FontWeight.SemiBold,
             color = VaultText,
@@ -71,8 +71,8 @@ fun FirstRunScreen(onContinue: () -> Unit) {
         Text(
             "Your files stay encrypted on this device. There is no account and no cloud.\n\n" +
                 "Next you’ll choose lock type — PIN, Password, or Pattern (lock type choose karo). " +
-                "It cannot be recovered — if you forget it, your vault is permanently inaccessible. " +
-                "Clearing app data also destroys the vault.",
+                "It cannot be recovered — if you forget it, your data is permanently inaccessible. " +
+                "Clearing app data also destroys Cyphr.",
             style = MaterialTheme.typography.bodyLarge,
             color = VaultTextMuted,
             textAlign = TextAlign.Center,

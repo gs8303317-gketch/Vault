@@ -35,8 +35,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items as lazyListItems
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -96,6 +98,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Brush
@@ -166,19 +169,27 @@ fun LibraryScreen(
     onLoadThumb: suspend (id: String) -> Bitmap?,
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
-    var query by remember { mutableStateOf("") }
-    var searchOpen by remember { mutableStateOf(false) }
-    var selectedCategory by remember { mutableStateOf<VaultCategory?>(null) }
-    var favoritesOnly by remember { mutableStateOf(false) }
+    // rememberSaveable so hub tab restore / dialog dismiss does not reset filters.
+    var query by rememberSaveable { mutableStateOf("") }
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
+    var selectedCategoryName by rememberSaveable { mutableStateOf<String?>(null) }
+    val selectedCategory: VaultCategory? = selectedCategoryName?.let { name ->
+        VaultCategory.entries.find { it.name == name }
+    }
+    var favoritesOnly by rememberSaveable { mutableStateOf(false) }
     var selectionMode by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     val context = LocalContext.current
     val libraryPrefs = remember(context) { LibraryPrefs(context) }
-    var sort by remember { mutableStateOf(libraryPrefs.getSort()) }
+    var sortName by rememberSaveable { mutableStateOf(libraryPrefs.getSort().name) }
+    val sort = LibrarySort.valueOf(sortName)
     var sortMenuOpen by remember { mutableStateOf(false) }
-    var viewMode by remember { mutableStateOf(libraryPrefs.getViewMode()) }
+    var viewModeName by rememberSaveable { mutableStateOf(libraryPrefs.getViewMode().name) }
+    val viewMode = LibraryViewMode.valueOf(viewModeName)
     var viewMenuOpen by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
+    val listState = rememberLazyListState()
+    val gridState = rememberLazyGridState()
 
     LaunchedEffect(statusMessage) {
         val msg = statusMessage ?: return@LaunchedEffect
@@ -301,7 +312,7 @@ fun LibraryScreen(
                             onValueChange = { query = it },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
-                            placeholder = { Text("Search vault", color = VaultTextMuted) },
+                            placeholder = { Text("Search library", color = VaultTextMuted) },
                             trailingIcon = {
                                 if (query.isNotEmpty()) {
                                     IconButton(onClick = { query = "" }) {
@@ -349,7 +360,7 @@ fun LibraryScreen(
                     title = {
                         Column {
                             Text(
-                                folderTitle ?: "Vault",
+                                folderTitle ?: "Cyphr",
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -411,7 +422,7 @@ fun LibraryScreen(
                                             )
                                         },
                                         onClick = {
-                                            viewMode = option
+                                            viewModeName = option.name
                                             libraryPrefs.setViewMode(option)
                                             viewMenuOpen = false
                                         },
@@ -440,7 +451,7 @@ fun LibraryScreen(
                                             )
                                         },
                                         onClick = {
-                                            sort = option
+                                            sortName = option.name
                                             libraryPrefs.setSort(option)
                                             sortMenuOpen = false
                                         },
@@ -497,7 +508,7 @@ fun LibraryScreen(
                         selected = selectedCategory == null && !favoritesOnly,
                         icon = Icons.Default.Inbox,
                         onClick = {
-                            selectedCategory = null
+                            selectedCategoryName = null
                             favoritesOnly = false
                         },
                     )
@@ -507,7 +518,7 @@ fun LibraryScreen(
                         icon = if (favoritesOnly) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                         onClick = {
                             favoritesOnly = true
-                            selectedCategory = null
+                            selectedCategoryName = null
                         },
                     )
                     CategoryChip(
@@ -515,7 +526,7 @@ fun LibraryScreen(
                         selected = selectedCategory == VaultCategory.IMAGE && !favoritesOnly,
                         icon = Icons.Default.Image,
                         onClick = {
-                            selectedCategory = VaultCategory.IMAGE
+                            selectedCategoryName = VaultCategory.IMAGE.name
                             favoritesOnly = false
                         },
                     )
@@ -524,7 +535,7 @@ fun LibraryScreen(
                         selected = selectedCategory == VaultCategory.VIDEO && !favoritesOnly,
                         icon = Icons.Default.VideoFile,
                         onClick = {
-                            selectedCategory = VaultCategory.VIDEO
+                            selectedCategoryName = VaultCategory.VIDEO.name
                             favoritesOnly = false
                         },
                     )
@@ -533,7 +544,7 @@ fun LibraryScreen(
                         selected = selectedCategory == VaultCategory.AUDIO && !favoritesOnly,
                         icon = Icons.Default.AudioFile,
                         onClick = {
-                            selectedCategory = VaultCategory.AUDIO
+                            selectedCategoryName = VaultCategory.AUDIO.name
                             favoritesOnly = false
                         },
                     )
@@ -542,7 +553,7 @@ fun LibraryScreen(
                         selected = selectedCategory == VaultCategory.DOCUMENT && !favoritesOnly,
                         icon = Icons.Default.Description,
                         onClick = {
-                            selectedCategory = VaultCategory.DOCUMENT
+                            selectedCategoryName = VaultCategory.DOCUMENT.name
                             favoritesOnly = false
                         },
                     )
@@ -551,7 +562,7 @@ fun LibraryScreen(
                         selected = selectedCategory == VaultCategory.OTHER && !favoritesOnly,
                         icon = Icons.AutoMirrored.Filled.InsertDriveFile,
                         onClick = {
-                            selectedCategory = VaultCategory.OTHER
+                            selectedCategoryName = VaultCategory.OTHER.name
                             favoritesOnly = false
                         },
                     )
@@ -595,7 +606,7 @@ fun LibraryScreen(
                     items.isEmpty() && !importing -> {
                         LibraryEmptyState(
                             icon = Icons.Default.Lock,
-                            title = "Your vault is empty",
+                            title = "Your library is empty",
                             body = "Import photos, videos, audio, or documents. Everything stays encrypted on this device.",
                             modifier = Modifier.align(Alignment.Center),
                         )
@@ -616,6 +627,7 @@ fun LibraryScreen(
                         when (viewMode) {
                             LibraryViewMode.LIST -> {
                                 LazyColumn(
+                                    state = listState,
                                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                                     verticalArrangement = Arrangement.spacedBy(8.dp),
                                     modifier = Modifier.fillMaxSize(),
@@ -660,6 +672,7 @@ fun LibraryScreen(
                                     if (viewMode == LibraryViewMode.COMFORTABLE) 160.dp else 104.dp
                                 LazyVerticalGrid(
                                     columns = GridCells.Adaptive(minSize = minSize),
+                                    state = gridState,
                                     contentPadding = PaddingValues(10.dp),
                                     verticalArrangement = Arrangement.spacedBy(6.dp),
                                     horizontalArrangement = Arrangement.spacedBy(6.dp),

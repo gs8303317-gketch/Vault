@@ -17,8 +17,8 @@ fun ExportConfirmDialog(
     stripsLocationExif: Boolean = false,
 ) {
     val body = buildString {
-        append("\"$fileName\" will be saved outside Vault as a normal unencrypted file. ")
-        append("Anyone with access to that file can open it. The encrypted original stays in Vault.")
+        append("\"$fileName\" will be saved outside Cyphr as a normal unencrypted file. ")
+        append("Anyone with access to that file can open it. The encrypted original stays in Cyphr.")
         if (stripsLocationExif) {
             append(" Image export strips location EXIF (GPS) when applicable.")
         }

@@ -1,6 +1,15 @@
-# Vault
+# Cyphr
 
-Offline encrypted personal workspace for Android. **v0.4.29** — Phase D login/settings/tools polish: AMOLED unlock, grouped Settings, Folders/Trash aligned with library gold.
+Offline encrypted personal workspace for Android (display name **Cyphr**; package `app.vault.workspace` unchanged for upgrades). **v0.4.30** — nested-folder back stack, hub back-to-Library, Cyphr branding + icon.
+
+## What this release adds (v0.4.30 / versionCode 47)
+
+- **Nested folder back**: Library system Back / toolbar back pops one folder breadcrumb (exact parent via parent chain), not straight to root.
+- **Hub back**: From Folders or Settings (bottom-nav secondary), system Back / toolbar back navigates to **Library** first (`launchSingleTop` + `saveState` / `restoreState`). Exit confirm only on Library root (no folder); Exit finishes, Cancel dismisses; double-back while dialog open also exits.
+- **State preservation**: Library filter/search/view use `rememberSaveable`; LazyList/Grid keep scroll state; bottom-nav hub `navigate` uses `popUpTo(Library){ saveState=true }`, `launchSingleTop`, `restoreState=true`.
+- **Rename (display only)**: `app_name` and user-visible Vault copy → **Cyphr** (unlock/setup wordmark, exit dialog, settings/about, export copy). Kotlin package / `applicationId` `app.vault.workspace` and internal class names (`VaultApp`, `VaultCrypto`, `Theme.Vault`) unchanged for upgrade continuity.
+- **Icon**: Adaptive + legacy mipmaps (mdpi–xxxhdpi + anydpi-v26) from Cyphr gold-on-black shield/cipher asset; black background.
+- **Wire**: version **0.4.30** / versionCode **47**. Still **no INTERNET**, no PiP, no seek-prepare. Lock crypto / encryption unchanged. Phase 3 cleanup not in this commit.
 
 ## What this release adds (v0.4.29 / versionCode 46)
 

@@ -89,6 +89,23 @@ object Routes {
     fun viewer(id: String) = "viewer/$id"
 }
 
+/** Library folder breadcrumb entry (id + display name). */
+private data class FolderCrumb(val id: String, val name: String)
+
+/** Build root→leaf chain from [folder] using in-memory [all] parent links. */
+private fun folderChainOf(folder: VaultFolder, all: List<VaultFolder>): List<FolderCrumb> {
+    val byId = all.associateBy { it.id }
+    val ascending = mutableListOf<FolderCrumb>()
+    var cur: VaultFolder? = folder
+    val seen = mutableSetOf<String>()
+    while (cur != null && cur.id !in seen) {
+        seen += cur.id
+        ascending += FolderCrumb(cur.id, cur.name)
+        cur = cur.parentId?.let { byId[it] }
+    }
+    return ascending.asReversed()
+}
+
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun VaultNav(
@@ -114,8 +131,10 @@ fun VaultNav(
     var items by remember { mutableStateOf<List<VaultItem>>(emptyList()) }
     var trashItems by remember { mutableStateOf<List<VaultItem>>(emptyList()) }
     var folders by remember { mutableStateOf<List<VaultFolder>>(emptyList()) }
-    var currentFolderId by remember { mutableStateOf<String?>(null) }
-    var currentFolderName by remember { mutableStateOf<String?>(null) }
+    // Nested-folder breadcrumb: open pushes/rebuilds chain; back pops one level (exact parent).
+    var folderStack by remember { mutableStateOf<List<FolderCrumb>>(emptyList()) }
+    val currentFolderId = folderStack.lastOrNull()?.id
+    val currentFolderName = folderStack.lastOrNull()?.name
     var activePlayers by remember { mutableStateOf<List<DecryptingPlayback>>(emptyList()) }
     var pendingExport by remember { mutableStateOf<VaultItem?>(null) }
     var moveItemIds by remember { mutableStateOf<List<String>?>(null) }
@@ -156,18 +175,20 @@ fun VaultNav(
                 yield()
                 repository.observeTotalStorageBytes().collect { storageUsedBytes = it }
             }
-            if (currentFolderId != null) {
-                currentFolderName = repository.getFolder(currentFolderId!!)?.name
-            } else {
-                currentFolderName = null
+            // Refresh tip crumb name if it changed out-of-band.
+            val tip = folderStack.lastOrNull()
+            if (tip != null) {
+                val fresh = repository.getFolder(tip.id)
+                if (fresh != null && fresh.name != tip.name) {
+                    folderStack = folderStack.dropLast(1) + FolderCrumb(fresh.id, fresh.name)
+                }
             }
         } else {
             items = emptyList()
             trashItems = emptyList()
             folders = emptyList()
             storageUsedBytes = 0L
-            currentFolderId = null
-            currentFolderName = null
+            folderStack = emptyList()
             activePlayers.forEach { it.release() }
             activePlayers = emptyList()
             ThumbCache.clear()
@@ -300,7 +321,7 @@ fun VaultNav(
                 },
             )
             val info = BiometricPrompt.PromptInfo.Builder()
-                .setTitle("Unlock Vault")
+                .setTitle("Unlock Cyphr")
                 .setSubtitle("Use biometrics to unlock")
                 .setNegativeButtonText("Use " + session.lockType().displayName)
                 .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
@@ -374,7 +395,7 @@ fun VaultNav(
             return@rememberLauncherForActivityResult
         }
         if (session.state.value !is SessionManager.SessionState.Unlocked) {
-            statusMessage = "Vault locked during import — unlock and try again"
+            statusMessage = "Cyphr locked during import — unlock and try again"
             return@rememberLauncherForActivityResult
         }
         scope.launch {
@@ -418,7 +439,7 @@ fun VaultNav(
         pendingExport = null
         if (uri == null || item == null) return@rememberLauncherForActivityResult
         if (session.state.value !is SessionManager.SessionState.Unlocked) {
-            statusMessage = "Vault locked during export — unlock and try again"
+            statusMessage = "Cyphr locked during export — unlock and try again"
             return@rememberLauncherForActivityResult
         }
         scope.launch {
@@ -432,36 +453,49 @@ fun VaultNav(
 
     val navBackStackEntry by nav.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+
+    fun popFolderLevel() {
+        if (folderStack.isNotEmpty()) {
+            folderStack = folderStack.dropLast(1)
+        }
+    }
+
+    fun openFolderInLibrary(folder: VaultFolder) {
+        folderStack = folderChainOf(folder, folders)
+    }
+
+    // Nested folders: pop one breadcrumb (exact parent), never jump straight to root.
     BackHandler(enabled = currentFolderId != null && currentRoute == Routes.Library) {
-        currentFolderId = null
-        currentFolderName = null
+        popFolderLevel()
     }
 
     val hubRoutes = setOf(Routes.Library, Routes.Folders, Routes.Settings)
     val showBottomBar = currentRoute in hubRoutes
-    // Leave-app only from Library root (Folders/Settings still pop to Library).
-    // Nested screens (viewer / trash / settings subflows) keep normal pop.
+    // Leave-app only from Library root (no folder). Hub secondary tabs go Home first.
     val atLibraryRoot = currentRoute == Routes.Library && currentFolderId == null
+    val atHubSecondary = currentRoute == Routes.Folders || currentRoute == Routes.Settings
+
+    fun navigateHub(route: String) {
+        showExitConfirm = false
+        nav.navigate(route) {
+            popUpTo(Routes.Library) {
+                saveState = true
+            }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+
+    BackHandler(enabled = atHubSecondary) {
+        navigateHub(Routes.Library)
+    }
+
     BackHandler(enabled = atLibraryRoot) {
         if (showExitConfirm) {
             // Double-back while dialog visible → confirm exit
             (context as? Activity)?.finish()
         } else {
             showExitConfirm = true
-        }
-    }
-
-    fun navigateHub(route: String) {
-        if (route == Routes.Library) {
-            nav.navigate(Routes.Library) {
-                popUpTo(Routes.Library) { inclusive = false }
-                launchSingleTop = true
-            }
-        } else {
-            nav.navigate(route) {
-                popUpTo(Routes.Library) { inclusive = false }
-                launchSingleTop = true
-            }
         }
     }
 
@@ -671,10 +705,7 @@ fun VaultNav(
                 onFolders = { nav.navigate(Routes.Folders) },
                 folderTitle = currentFolderName,
                 onClearFolderFilter = if (currentFolderId != null) {
-                    {
-                        currentFolderId = null
-                        currentFolderName = null
-                    }
+                    { popFolderLevel() }
                 } else {
                     null
                 },
@@ -702,17 +733,11 @@ fun VaultNav(
         composable(Routes.Folders) {
             FoldersScreen(
                 folders = folders,
-                onBack = { nav.popBackStack() },
+                onBack = { navigateHub(Routes.Library) },
                 onOpenFolder = { folder ->
-                    currentFolderId = folder.id
-                    currentFolderName = folder.name
-                    // Return to library (or create it) with folder filter applied
-                    if (!nav.popBackStack(Routes.Library, inclusive = false)) {
-                        nav.navigate(Routes.Library) {
-                            popUpTo(Routes.Unlock) { inclusive = false }
-                            launchSingleTop = true
-                        }
-                    }
+                    openFolderInLibrary(folder)
+                    // Return to library with folder filter; preserve hub state.
+                    navigateHub(Routes.Library)
                 },
                 onCreateFolder = { name ->
                     scope.launch {
@@ -728,10 +753,11 @@ fun VaultNav(
                         val result = repository.renameFolder(folder.id, name)
                         statusMessage = result.fold(
                             onSuccess = {
-                                if (currentFolderId == folder.id) {
-                                    currentFolderName = name.trim()
+                                val trimmed = name.trim()
+                                folderStack = folderStack.map {
+                                    if (it.id == folder.id) it.copy(name = trimmed) else it
                                 }
-                                "Renamed to “${name.trim()}”"
+                                "Renamed to “$trimmed”"
                             },
                             onFailure = { "Could not rename folder: ${it.message}" },
                         )
@@ -740,9 +766,10 @@ fun VaultNav(
                 onDeleteFolder = { folder ->
                     scope.launch {
                         repository.deleteFolder(folder.id)
-                        if (currentFolderId == folder.id) {
-                            currentFolderId = null
-                            currentFolderName = null
+                        // Drop deleted folder and any crumbs below it.
+                        val idx = folderStack.indexOfFirst { it.id == folder.id }
+                        if (idx >= 0) {
+                            folderStack = folderStack.take(idx)
                         }
                         statusMessage = "Deleted folder “${folder.name}”"
                     }
@@ -751,7 +778,7 @@ fun VaultNav(
         }
         composable(Routes.Settings) {
             SettingsScreen(
-                onBack = { nav.popBackStack() },
+                onBack = { navigateHub(Routes.Library) },
                 onLockNow = {
                     session.lock()
                 },
@@ -941,7 +968,7 @@ fun VaultNav(
                 usePlatformDefaultWidth = true,
             ),
             containerColor = VaultSurface,
-            title = { Text("Exit Vault?") },
+            title = { Text("Exit Cyphr?") },
             text = { Text("Close the app? You can also press back again to exit.") },
             confirmButton = {
                 TextButton(

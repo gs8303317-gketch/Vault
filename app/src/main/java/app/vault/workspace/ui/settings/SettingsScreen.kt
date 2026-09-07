@@ -220,7 +220,7 @@ fun SettingsScreen(
                 SettingsRowDivider()
                 SettingsRow(
                     icon = Icons.Default.Storage,
-                    title = "Vault storage",
+                    title = "Cyphr storage",
                     subtitle = "${formatHumanSize(storageUsedBytes)} encrypted (library + trash)",
                 )
             }
@@ -237,13 +237,13 @@ fun SettingsScreen(
                 SettingsRow(
                     icon = Icons.Default.WifiOff,
                     title = "Network",
-                    subtitle = "No network permission — Vault never connects online.",
+                    subtitle = "No network permission — Cyphr never connects online.",
                 )
                 SettingsRowDivider()
                 SettingsRow(
                     icon = Icons.Default.Shield,
                     title = "Lock recovery",
-                    subtitle = "Your lock credential cannot be recovered. Forgetting it permanently locks this vault.",
+                    subtitle = "Your lock credential cannot be recovered. Forgetting it permanently locks this library.",
                 )
             }
 

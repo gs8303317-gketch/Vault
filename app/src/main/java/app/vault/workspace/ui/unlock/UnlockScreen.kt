@@ -149,7 +149,7 @@ fun UnlockScreen(
         }
         Spacer(Modifier.height(if (compact) 12.dp else 20.dp))
         Text(
-            "Vault",
+            "Cyphr",
             style = if (compact) {
                 MaterialTheme.typography.headlineMedium
             } else {
