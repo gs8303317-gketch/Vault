@@ -1,6 +1,19 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.4.26** — Phase A critical bugs: exit confirm, slideshow timer, split AV queues, lock-type chooser.
+Offline encrypted personal workspace for Android. **v0.4.27** — Phase B feel-faster: ThumbCache dedupe, IO off main, library/viewer latency wins.
+
+## What this release adds (v0.4.27 / versionCode 44)
+
+- **ThumbCache**: in-flight dedupe (no double-decrypt on the same id), parallel load cap (4), LRU 96; trash shares the same cache.
+- **Library / trash scroll**: `remember(thumb) { asImageBitmap() }` avoids reallocating ImageBitmap every recomposition.
+- **Room → UI**: `observeLibrary` / folders / trash name-decrypt runs on `Dispatchers.Default` (`flowOn`) — favorite/import no longer janks the main thread decrypting every display name.
+- **loadThumbBitmap**: subsample decode + wipe plaintext bytes after decode.
+- **Image viewer open**: show cached library thumb immediately while full decrypt/decode runs; tool rail / crop wait for full-res (cache bitmaps never recycled by the viewer).
+- **PDF open**: `PdfRenderer` construction moved to IO with handle open; strip thumbs remember ImageBitmap + recycle on leave.
+- **Text / HTML / Markdown / CSV**: encoding decode (+ CSV parse) stay on IO with decrypt — not bounced back to main.
+- **Unlock → library**: trash/folders/storage collectors `yield()` so the library Flow starts first.
+- **Viewer queues**: `mediaQueueFor` / index wrapped in `remember`.
+- **Wire**: version **0.4.27** / versionCode **44**. Still **no INTERNET**, no PiP, no seek-prepare. Encryption / EncryptedDataSource / immersive / shared elements unchanged.
 
 ## What this release adds (v0.4.26 / versionCode 43)
 

@@ -137,17 +137,19 @@ fun TextFileViewer(
         fullText = null
         loadMoreCount = 0
         try {
-            val bytes = withContext(Dispatchers.IO) { loadBytes() }
-            try {
-                val decoded = TextEncoding.decode(bytes)
-                fullText = decoded.text
-                encodingLabel = decoded.encodingLabel
-                bytesTruncated = decoded.bytesTruncated ||
-                    decoded.text.length >= TextEncoding.HARD_MAX_CHARS
-                originalByteLength = decoded.originalByteLength
-            } finally {
-                bytes.fill(0)
+            val decoded = withContext(Dispatchers.IO) {
+                val bytes = loadBytes()
+                try {
+                    TextEncoding.decode(bytes)
+                } finally {
+                    bytes.fill(0)
+                }
             }
+            fullText = decoded.text
+            encodingLabel = decoded.encodingLabel
+            bytesTruncated = decoded.bytesTruncated ||
+                decoded.text.length >= TextEncoding.HARD_MAX_CHARS
+            originalByteLength = decoded.originalByteLength
         } catch (e: Exception) {
             error = e.message ?: "Cannot read text"
         }

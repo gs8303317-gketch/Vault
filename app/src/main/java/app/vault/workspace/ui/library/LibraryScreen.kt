@@ -711,8 +711,9 @@ private fun LibraryCard(
             if (thumb != null) {
                 val useBounds = item.category == VaultCategory.DOCUMENT ||
                     item.category == VaultCategory.OTHER
+                val imageBitmap = remember(thumb) { thumb!!.asImageBitmap() }
                 Image(
-                    bitmap = thumb!!.asImageBitmap(),
+                    bitmap = imageBitmap,
                     contentDescription = item.displayName,
                     modifier = Modifier
                         .fillMaxSize()
@@ -861,8 +862,9 @@ private fun LibraryListRow(
             if (thumb != null) {
                 val useBounds = item.category == VaultCategory.DOCUMENT ||
                     item.category == VaultCategory.OTHER
+                val imageBitmap = remember(thumb) { thumb!!.asImageBitmap() }
                 Image(
-                    bitmap = thumb!!.asImageBitmap(),
+                    bitmap = imageBitmap,
                     contentDescription = null,
                     modifier = Modifier
                         .fillMaxSize()

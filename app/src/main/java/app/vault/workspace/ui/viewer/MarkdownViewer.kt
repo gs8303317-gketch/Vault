@@ -73,11 +73,13 @@ fun MarkdownViewer(
         error = null
         fullText = null
         try {
-            val bytes = withContext(Dispatchers.IO) { loadBytes() }
-            try {
-                fullText = TextEncoding.decode(bytes).text
-            } finally {
-                bytes.fill(0)
+            fullText = withContext(Dispatchers.IO) {
+                val bytes = loadBytes()
+                try {
+                    TextEncoding.decode(bytes).text
+                } finally {
+                    bytes.fill(0)
+                }
             }
         } catch (e: Exception) {
             error = e.message ?: "Failed to open"

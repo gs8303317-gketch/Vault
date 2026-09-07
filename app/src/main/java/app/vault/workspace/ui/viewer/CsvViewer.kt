@@ -76,14 +76,17 @@ fun CsvViewer(
         fullText = null
         preview = null
         try {
-            val bytes = withContext(Dispatchers.IO) { loadBytes() }
-            try {
-                val decoded = TextEncoding.decode(bytes).text
-                fullText = decoded
-                preview = CsvTable.parse(decoded)
-            } finally {
-                bytes.fill(0)
+            val loaded = withContext(Dispatchers.IO) {
+                val bytes = loadBytes()
+                try {
+                    val decoded = TextEncoding.decode(bytes).text
+                    decoded to CsvTable.parse(decoded)
+                } finally {
+                    bytes.fill(0)
+                }
             }
+            fullText = loaded.first
+            preview = loaded.second
         } catch (e: Exception) {
             error = e.message ?: "Failed to open"
         }

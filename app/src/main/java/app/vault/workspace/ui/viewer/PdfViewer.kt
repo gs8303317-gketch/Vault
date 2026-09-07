@@ -187,17 +187,29 @@ fun PdfViewer(
         ready = false
         error = null
         try {
-            val h = withContext(Dispatchers.IO) { openPdfHandle() }
-            handle = h
-            val r = PdfRenderer(h.pfd)
-            renderer = r
-            pageCount = r.pageCount
-            initialPage = PdfPageStore.resumePageIndex(pageStore.getPageIndex(itemId), r.pageCount)
+            data class Opened(val handle: EncryptedPdfHandle, val renderer: PdfRenderer, val pages: Int, val resume: Int)
+            val opened = withContext(Dispatchers.IO) {
+                val h = openPdfHandle()
+                try {
+                    val r = PdfRenderer(h.pfd)
+                    val pages = r.pageCount
+                    val resume = PdfPageStore.resumePageIndex(pageStore.getPageIndex(itemId), pages)
+                    Opened(h, r, pages, resume)
+                } catch (e: Exception) {
+                    h.releaseResources()
+                    throw e
+                }
+            }
+            handle = opened.handle
+            renderer = opened.renderer
+            pageCount = opened.pages
+            initialPage = opened.resume
             ready = true
         } catch (e: Exception) {
             error = e.message ?: "Cannot open PDF"
             handle?.releaseResources()
             handle = null
+            renderer = null
         }
     }
 
@@ -502,8 +514,18 @@ private fun PdfThumb(
 ) {
     var bitmap by remember(pageIndex) { mutableStateOf<Bitmap?>(null) }
     LaunchedEffect(pageIndex) {
-        bitmap = withContext(Dispatchers.IO) {
+        val rendered = withContext(Dispatchers.IO) {
             renderPdfPage(renderer, pageIndex, scaleFactor = 0.35f)
+        }
+        val prev = bitmap
+        bitmap = rendered
+        if (prev != null && prev !== rendered && !prev.isRecycled) prev.recycle()
+    }
+    DisposableEffect(pageIndex) {
+        onDispose {
+            val b = bitmap
+            bitmap = null
+            if (b != null && !b.isRecycled) b.recycle()
         }
     }
     val borderColor = if (selected) VaultAccent else Color.Transparent
@@ -518,8 +540,9 @@ private fun PdfThumb(
     ) {
         val bmp = bitmap
         if (bmp != null) {
+            val imageBitmap = remember(bmp) { bmp.asImageBitmap() }
             Image(
-                bitmap = bmp.asImageBitmap(),
+                bitmap = imageBitmap,
                 contentDescription = "Page ${pageIndex + 1}",
                 contentScale = ContentScale.Fit,
                 colorFilter = if (invert) ColorFilter.colorMatrix(PdfInvertColorMatrix) else null,

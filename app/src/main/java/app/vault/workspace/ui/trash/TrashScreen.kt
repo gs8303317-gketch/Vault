@@ -56,6 +56,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.vault.workspace.data.VaultCategory
+import app.vault.workspace.ui.library.ThumbCache
 import app.vault.workspace.data.VaultItem
 import app.vault.workspace.data.formatHumanSize
 import app.vault.workspace.data.formatReadableDate
@@ -200,9 +201,13 @@ private fun TrashCard(
     onRestore: () -> Unit,
     onDeleteForever: () -> Unit,
 ) {
-    val thumb by produceState<Bitmap?>(initialValue = null, item.id, item.hasThumb) {
+    val thumb by produceState<Bitmap?>(
+        initialValue = if (item.hasThumb) ThumbCache.peek(item.id) else null,
+        item.id,
+        item.hasThumb,
+    ) {
         value = if (item.hasThumb) {
-            runCatching { onLoadThumb(item.id) }.getOrNull()
+            runCatching { ThumbCache.get(item.id) { onLoadThumb(item.id) } }.getOrNull()
         } else {
             null
         }
@@ -222,8 +227,9 @@ private fun TrashCard(
                     .weight(1f),
             ) {
                 if (thumb != null) {
+                    val imageBitmap = remember(thumb) { thumb!!.asImageBitmap() }
                     Image(
-                        bitmap = thumb!!.asImageBitmap(),
+                        bitmap = imageBitmap,
                         contentDescription = item.displayName,
                         modifier = Modifier
                             .fillMaxSize()

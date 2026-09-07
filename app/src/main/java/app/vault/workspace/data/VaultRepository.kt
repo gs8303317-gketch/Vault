@@ -23,6 +23,7 @@ import app.vault.workspace.media.EncryptedPdfHandle
 import app.vault.workspace.media.EncryptedPdfOpener
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
@@ -84,10 +85,11 @@ class VaultRepository(
      */
     fun observeLibrary(folderId: String? = null): Flow<List<VaultItem>> {
         val source = if (folderId == null) dao.observeAll() else dao.observeItemsInFolder(folderId)
+        // Name decrypt off main — Room emissions otherwise map on the collector (UI) thread.
         return source.map { list ->
             val vmk = session.peekVmk() ?: return@map emptyList()
             list.mapNotNull { mapEntity(it, vmk) }
-        }
+        }.flowOn(Dispatchers.Default)
     }
 
     fun observeFolders(): Flow<List<VaultFolder>> =
@@ -105,7 +107,7 @@ class VaultRepository(
                     null
                 }
             }
-        }
+        }.flowOn(Dispatchers.Default)
 
     suspend fun createFolder(name: String, parentId: String? = null): Result<VaultFolder> =
         withContext(Dispatchers.IO) {
@@ -176,7 +178,7 @@ class VaultRepository(
         dao.observeTrash().map { list ->
             val vmk = session.peekVmk() ?: return@map emptyList()
             list.mapNotNull { mapEntity(it, vmk) }
-        }
+        }.flowOn(Dispatchers.Default)
 
     suspend fun getItem(id: String): VaultItem? = withContext(Dispatchers.IO) {
         val entity = dao.getById(id) ?: return@withContext null
@@ -287,8 +289,25 @@ class VaultRepository(
             val dek = KeyHierarchy.unwrapDek(session.requireVmk(), entity.dekWrap)
             try {
                 val bytes = VaultCrypto.decryptToBytes(file, dek)
-                val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@withContext null
-                scaleToMaxSide(decoded, maxSide)
+                try {
+                    // Subsample before full decode when a thumb blob is larger than needed.
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                    var sample = 1
+                    val w = bounds.outWidth
+                    val h = bounds.outHeight
+                    if (w > 0 && h > 0) {
+                        while (w / sample > maxSide * 2 || h / sample > maxSide * 2) {
+                            sample *= 2
+                        }
+                    }
+                    val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+                    val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+                        ?: return@withContext null
+                    scaleToMaxSide(decoded, maxSide)
+                } finally {
+                    bytes.fill(0)
+                }
             } finally {
                 KeyHierarchy.wipe(dek)
             }

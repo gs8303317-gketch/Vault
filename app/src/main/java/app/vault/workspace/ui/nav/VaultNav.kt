@@ -71,6 +71,7 @@ import app.vault.workspace.ui.trash.TrashScreen
 import app.vault.workspace.ui.unlock.UnlockScreen
 import app.vault.workspace.ui.viewer.ViewerScreen
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.yield
 
 object Routes {
     const val FirstRun = "first_run"
@@ -135,16 +136,20 @@ fun VaultNav(
     LaunchedEffect(sessionState, currentFolderId) {
         if (sessionState is SessionManager.SessionState.Unlocked) {
             biometricEnabled = BiometricVault.isEnabled(context)
+            // Library collect first for unlock → grid; defer trash/folders/storage one frame.
             launch {
                 repository.observeLibrary(currentFolderId).collect { items = it }
             }
             launch {
+                yield()
                 repository.observeTrashItems().collect { trashItems = it }
             }
             launch {
+                yield()
                 repository.observeFolders().collect { folders = it }
             }
             launch {
+                yield()
                 repository.observeTotalStorageBytes().collect { storageUsedBytes = it }
             }
             if (currentFolderId != null) {
@@ -810,8 +815,12 @@ fun VaultNav(
             val current = fromLibrary ?: fetched
             if (current != null) {
                 // Per-category queues: images alone; VIDEO≠AUDIO (no cross-mix).
-                val mediaQueue = mediaQueueFor(current.category, items)
-                val mediaIndex = mediaQueue.indexOfFirst { it.id == current.id }
+                val mediaQueue = remember(current.category, items) {
+                    mediaQueueFor(current.category, items)
+                }
+                val mediaIndex = remember(mediaQueue, current.id) {
+                    mediaQueue.indexOfFirst { it.id == current.id }
+                }
                 // Slideshow/gallery wrap only for images; AV player stays linear.
                 val wrapImages = current.category == VaultCategory.IMAGE && mediaQueue.size > 1
                 val prevMedia = when {

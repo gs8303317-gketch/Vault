@@ -90,6 +90,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import app.vault.workspace.image.ImageCrop
+import app.vault.workspace.ui.library.ThumbCache
 import app.vault.workspace.ui.theme.VaultAccent
 import app.vault.workspace.ui.theme.VaultTextMuted
 import kotlinx.coroutines.Dispatchers
@@ -154,7 +155,9 @@ fun ImageViewer(
     /** Tool-rail / crop interactions — parent resets chrome auto-hide timer. */
     onControlsInteraction: () -> Unit = {},
 ) {
+    // Full-res / GIF canvas we own (may recycle). Library thumb is never recycled here.
     var bitmap by remember { mutableStateOf<Bitmap?>(null) }
+    val cacheThumb = remember(itemId) { itemId?.let { ThumbCache.peek(it) } }
     var gifMovie by remember { mutableStateOf<Movie?>(null) }
     var gifBytes by remember { mutableStateOf<ByteArray?>(null) }
     var gifCanvasBitmap by remember { mutableStateOf<Bitmap?>(null) }
@@ -361,11 +364,13 @@ fun ImageViewer(
             .background(Color.Black),
         contentAlignment = Alignment.Center,
     ) {
+        val displayBmp = bitmap ?: cacheThumb
+        val fullResReady = bitmap != null
         when {
             error != null -> Text(error!!, color = Color.White)
-            bitmap == null -> CircularProgressIndicator(color = VaultAccent)
+            displayBmp == null -> CircularProgressIndicator(color = VaultAccent)
             else -> {
-                val bmp = bitmap!!
+                val bmp = displayBmp
                 BoxWithConstraints(
                     Modifier
                         .fillMaxSize()
@@ -687,7 +692,7 @@ fun ImageViewer(
 
         // Premium bottom tool rail — single scrollable row (no IconButton clip / truncation)
         AnimatedVisibility(
-            visible = controlsVisible && bitmap != null && !cropping,
+            visible = controlsVisible && fullResReady && !cropping,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter),
