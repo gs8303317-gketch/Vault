@@ -1,6 +1,13 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.4.21** — Document Phase 3 (Markdown / CSV / HTML / OOXML text + OtherFile polish).
+Offline encrypted personal workspace for Android. **v0.4.22** — Immersive document system bars + PDF pinch/pan fix.
+
+## What this release adds (v0.4.22 / versionCode 39)
+
+- **True immersive documents**: PDF / text / markdown / CSV / HTML / Office-text (and image) viewers now hide **system status + nav bars** via `WindowInsetsController` (`BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE`), matching video. App chrome still toggles on tap; system bars stay hidden while in the viewer and restore on dispose / Back. Video path unchanged (`MediaPlayerScreen`).
+- **PDF pinch-zoom**: replaced `transformable` + `detectTapGestures` (gesture fight with `VerticalPager`) with ImageViewer-style `awaitEachGesture` — pinch / double-tap zoom work; pager keeps vertical scroll when not zoomed; pan consumes only when zoomed.
+- **PDF pan smoothness**: remembered `ImageBitmap` (no per-frame wrap), explicit fitted `size` + `graphicsLayer` (no `fillMaxSize` letterbox scale), bitmap recycle on replace/dispose, `beyondViewportPageCount = 1` for smoother page turns. Still `EncryptedPdfHandle` — no durable plaintext; no PiP; no seek-prepare.
+- **Wire**: `ViewerScreen` immersive DisposableEffect for IMAGE + docs; `PdfViewer`/`PdfPage` gesture rewrite. Version **0.4.22** / versionCode **39**.
 
 ## What this release adds (v0.4.21 / versionCode 38)
 

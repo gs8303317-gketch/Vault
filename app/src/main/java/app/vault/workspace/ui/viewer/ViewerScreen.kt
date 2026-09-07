@@ -43,6 +43,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -57,6 +58,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.ui.platform.LocalContext
 import app.vault.workspace.media.DecryptingPlayback
 import app.vault.workspace.data.VaultCategory
@@ -118,6 +120,36 @@ fun ViewerScreen(
     val immersive = item.category == VaultCategory.IMAGE ||
         item.category == VaultCategory.VIDEO ||
         isImmersiveDoc
+
+    // True immersive: hide status + nav bars for IMAGE and document viewers.
+    // VIDEO already hides/restores in MediaPlayerScreen — leave that path alone.
+    DisposableEffect(immersive, item.category, item.id, docKind) {
+        val hideHere = immersive && item.category != VaultCategory.VIDEO
+        if (!hideHere) {
+            onDispose { }
+        } else {
+            var ctx: Context? = context
+            var activity: Activity? = null
+            while (ctx != null) {
+                if (ctx is Activity) { activity = ctx; break }
+                ctx = (ctx as? ContextWrapper)?.baseContext
+            }
+            val act = activity
+            if (act == null) {
+                onDispose { }
+            } else {
+                val controller = WindowCompat.getInsetsController(act.window, view)
+                val prior = controller.systemBarsBehavior
+                controller.hide(WindowInsetsCompat.Type.systemBars())
+                controller.systemBarsBehavior =
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                onDispose {
+                    controller.show(WindowInsetsCompat.Type.systemBars())
+                    controller.systemBarsBehavior = prior
+                }
+            }
+        }
+    }
 
     // Auto-hide chrome for images / PDF / text-like docs; tool-rail taps bump [chromeBump].
     // Video chrome follows MediaPlayer controls (not this timer).

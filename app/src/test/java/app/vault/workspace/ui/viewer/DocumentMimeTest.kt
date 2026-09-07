@@ -89,4 +89,16 @@ class DocumentMimeTest {
         assertTrue(DocumentMime.categoryLabel("application/epub+zip", "a.epub").contains("EPUB"))
         assertTrue(DocumentMime.categoryLabel("text/markdown", "a.md").contains("Markdown"))
     }
+
+    @Test
+    fun immersiveDocumentKinds() {
+        assertTrue(DocumentMime.isImmersiveDocument(DocumentMime.ViewerKind.PDF))
+        assertTrue(DocumentMime.isImmersiveDocument(DocumentMime.ViewerKind.PLAIN_TEXT))
+        assertTrue(DocumentMime.isImmersiveDocument(DocumentMime.ViewerKind.MARKDOWN))
+        assertTrue(DocumentMime.isImmersiveDocument(DocumentMime.ViewerKind.CSV))
+        assertTrue(DocumentMime.isImmersiveDocument(DocumentMime.ViewerKind.HTML))
+        assertTrue(DocumentMime.isImmersiveDocument(DocumentMime.ViewerKind.OFFICE_TEXT))
+        assertFalse(DocumentMime.isImmersiveDocument(DocumentMime.ViewerKind.OTHER))
+    }
+
 }

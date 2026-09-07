@@ -17,9 +17,12 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculateCentroidSize
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -82,6 +85,7 @@ import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -103,6 +107,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
 import kotlin.math.max
 
 private enum class PdfFitMode { FIT_PAGE, FIT_WIDTH }
@@ -246,7 +251,7 @@ fun PdfViewer(
                         state = pagerState,
                         modifier = Modifier.fillMaxSize(),
                         userScrollEnabled = !pageZoomed,
-                        beyondViewportPageCount = 0,
+                        beyondViewportPageCount = 1,
                     ) { page ->
                         PdfPage(
                             renderer = renderer!!,
@@ -648,27 +653,43 @@ private fun PdfPage(
     onZoomedChanged: (Boolean) -> Unit,
     onSingleTap: () -> Unit,
 ) {
-    var bitmap by remember(pageIndex, scaleFactor) { mutableStateOf<Bitmap?>(null) }
-    var scale by remember(pageIndex) { mutableFloatStateOf(1f) }
-    var offset by remember(pageIndex) { mutableStateOf(Offset.Zero) }
+    var bitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    val latestOnSingleTap by rememberUpdatedState(onSingleTap)
+    val latestOnZoomedChanged by rememberUpdatedState(onZoomedChanged)
+    val density = LocalDensity.current
 
     LaunchedEffect(pageIndex, scaleFactor) {
-        bitmap = withContext(Dispatchers.IO) {
+        val rendered = withContext(Dispatchers.IO) {
             renderPdfPage(renderer, pageIndex, scaleFactor)
+        }
+        val prev = bitmap
+        bitmap = rendered
+        if (prev != null && prev !== rendered && !prev.isRecycled) {
+            prev.recycle()
         }
         scale = 1f
         offset = Offset.Zero
-        onZoomedChanged(false)
+        latestOnZoomedChanged(false)
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            val b = bitmap
+            bitmap = null
+            if (b != null && !b.isRecycled) b.recycle()
+        }
     }
 
     LaunchedEffect(resetToken, pageIndex) {
         scale = 1f
         offset = Offset.Zero
-        onZoomedChanged(false)
+        latestOnZoomedChanged(false)
     }
 
     LaunchedEffect(scale) {
-        onZoomedChanged(scale > 1.02f)
+        latestOnZoomedChanged(scale > 1.02f)
     }
 
     BoxWithConstraints(
@@ -682,6 +703,7 @@ private fun PdfPage(
         val bmp = bitmap
 
         if (bmp != null) {
+            val imageBitmap = remember(bmp) { bmp.asImageBitmap() }
             val fitted = remember(bmp.width, bmp.height, containerW, containerH, fitMode) {
                 when (fitMode) {
                     PdfFitMode.FIT_PAGE ->
@@ -692,23 +714,19 @@ private fun PdfPage(
                     }
                 }
             }
+            val dispW = fitted.first
+            val dispH = fitted.second
 
             fun clampOffset(raw: Offset, s: Float): Offset {
                 if (s <= 1.02f) return Offset.Zero
-                val scaledW = fitted.first * s
-                val scaledH = fitted.second * s
+                val scaledW = dispW * s
+                val scaledH = dispH * s
                 val maxX = max(0f, (scaledW - containerW) / 2f)
                 val maxY = max(0f, (scaledH - containerH) / 2f)
                 return Offset(
                     raw.x.coerceIn(-maxX, maxX),
                     raw.y.coerceIn(-maxY, maxY),
                 )
-            }
-
-            val transformState = rememberTransformableState { zoomChange, panChange, _ ->
-                val newScale = (scale * zoomChange).coerceIn(1f, 5f)
-                scale = newScale
-                offset = clampOffset(offset + panChange, newScale)
             }
 
             val paperColor = if (invert) Color(0xFF121212) else Color.White
@@ -720,39 +738,122 @@ private fun PdfPage(
                 contentAlignment = Alignment.Center,
             ) {
                 Image(
-                    bitmap = bmp.asImageBitmap(),
+                    bitmap = imageBitmap,
                     contentDescription = "PDF page ${pageIndex + 1}",
-                    contentScale = when (fitMode) {
-                        PdfFitMode.FIT_PAGE -> ContentScale.Fit
-                        PdfFitMode.FIT_WIDTH -> ContentScale.FillWidth
-                    },
+                    contentScale = ContentScale.FillBounds,
                     colorFilter = if (invert) ColorFilter.colorMatrix(PdfInvertColorMatrix) else null,
                     modifier = Modifier
-                        .fillMaxSize()
+                        .size(
+                            width = with(density) { dispW.toDp() },
+                            height = with(density) { dispH.toDp() },
+                        )
                         .graphicsLayer(
                             scaleX = scale,
                             scaleY = scale,
                             translationX = offset.x,
                             translationY = offset.y,
                         )
-                        .transformable(
-                            state = transformState,
-                            canPan = { scale > 1.02f },
-                            lockRotationOnZoomPan = true,
-                        )
-                        .pointerInput(pageIndex) {
-                            detectTapGestures(
-                                onTap = { onSingleTap() },
-                                onDoubleTap = {
-                                    if (scale > 1.05f) {
-                                        scale = 1f
-                                        offset = Offset.Zero
-                                    } else {
-                                        scale = 2.5f
-                                        offset = Offset.Zero
+                        .pointerInput(pageIndex, dispW, dispH, containerW, containerH) {
+                            val touchSlop = viewConfiguration.touchSlop
+                            val doubleTapTimeout = viewConfiguration.doubleTapTimeoutMillis
+                            var lastTapTime = 0L
+                            var lastTapPos = Offset.Zero
+                            val center = Offset(size.width / 2f, size.height / 2f)
+
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                var zoomAcc = 1f
+                                var panAcc = Offset.Zero
+                                var pastTouchSlop = false
+                                var lockedToTransform = false
+                                val startScale = scale
+
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val zoomChange = event.calculateZoom()
+                                    val panChange = event.calculatePan()
+                                    val pressedCount = event.changes.count { it.pressed }
+
+                                    if (!pastTouchSlop) {
+                                        zoomAcc *= zoomChange
+                                        panAcc += panChange
+                                        val centroidSize =
+                                            event.calculateCentroidSize(useCurrent = false)
+                                        val zoomMotion = abs(1f - zoomAcc) * centroidSize
+                                        val panMotion = panAcc.getDistance()
+                                        if (zoomMotion > touchSlop ||
+                                            panMotion > touchSlop ||
+                                            pressedCount > 1
+                                        ) {
+                                            pastTouchSlop = true
+                                            val multi = pressedCount > 1
+                                            val mostlyZoom = zoomMotion > panMotion
+                                            val canPanContent = startScale > 1.02f
+                                            // Steal gesture from VerticalPager only for pinch or zoomed pan.
+                                            if (multi || mostlyZoom || canPanContent) {
+                                                lockedToTransform = true
+                                            } else {
+                                                // Vertical page scroll — do not consume; let pager win.
+                                                break
+                                            }
+                                        }
                                     }
-                                },
-                            )
+
+                                    if (lockedToTransform) {
+                                        val z = event.calculateZoom()
+                                        val p = event.calculatePan()
+                                        val centroid = event.calculateCentroid(useCurrent = true)
+                                        val oldScale = scale
+                                        val newScale = (oldScale * z).coerceIn(1f, 5f)
+                                        if (newScale <= 1.01f) {
+                                            scale = 1f
+                                            offset = Offset.Zero
+                                        } else {
+                                            val tapRel = centroid - center
+                                            val zoomed = if (abs(z - 1f) > 0.001f) {
+                                                offset * (newScale / oldScale) +
+                                                    tapRel * (1f - newScale / oldScale)
+                                            } else {
+                                                offset
+                                            }
+                                            scale = newScale
+                                            offset = clampOffset(zoomed + p, newScale)
+                                        }
+                                        event.changes.forEach {
+                                            if (it.positionChanged()) it.consume()
+                                        }
+                                    }
+
+                                    if (event.changes.none { it.pressed }) {
+                                        if (!lockedToTransform && !pastTouchSlop) {
+                                            val now = System.currentTimeMillis()
+                                            val tapPos = down.position
+                                            if (now - lastTapTime <= doubleTapTimeout &&
+                                                (tapPos - lastTapPos).getDistance() < touchSlop * 4
+                                            ) {
+                                                if (scale > 1.05f) {
+                                                    scale = 1f
+                                                    offset = Offset.Zero
+                                                } else {
+                                                    val target = 2.5f
+                                                    val tapRel = tapPos - center
+                                                    val newOff =
+                                                        offset * (target / scale) +
+                                                            tapRel * (1f - target / scale)
+                                                    scale = target
+                                                    offset = clampOffset(newOff, target)
+                                                }
+                                                lastTapTime = 0L
+                                            } else {
+                                                lastTapTime = now
+                                                lastTapPos = tapPos
+                                                latestOnSingleTap()
+                                            }
+                                        }
+                                        break
+                                    }
+                                }
+                            }
                         },
                 )
             }
