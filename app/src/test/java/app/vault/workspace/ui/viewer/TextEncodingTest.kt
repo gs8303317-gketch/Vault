@@ -62,12 +62,17 @@ class TextEncodingTest {
     }
 
     @Test
-    fun isTextDocumentMime() {
+    fun isPlainTextDocumentMime() {
+        assertTrue(TextEncoding.isPlainTextDocumentMime("text/plain"))
+        assertTrue(TextEncoding.isPlainTextDocumentMime("application/json"))
+        assertTrue(TextEncoding.isPlainTextDocumentMime("application/xml"))
+        assertFalse(TextEncoding.isPlainTextDocumentMime("TEXT/HTML"))
+        assertFalse(TextEncoding.isPlainTextDocumentMime("text/markdown"))
+        assertFalse(TextEncoding.isPlainTextDocumentMime("text/csv"))
+        assertFalse(TextEncoding.isPlainTextDocumentMime("application/pdf"))
+        assertFalse(TextEncoding.isPlainTextDocumentMime("image/png"))
+        // Deprecated alias tracks plain-text routing.
         assertTrue(TextEncoding.isTextDocumentMime("text/plain"))
-        assertTrue(TextEncoding.isTextDocumentMime("TEXT/HTML"))
-        assertTrue(TextEncoding.isTextDocumentMime("application/json"))
-        assertTrue(TextEncoding.isTextDocumentMime("application/xml"))
-        assertFalse(TextEncoding.isTextDocumentMime("application/pdf"))
-        assertFalse(TextEncoding.isTextDocumentMime("image/png"))
+        assertFalse(TextEncoding.isTextDocumentMime("text/html"))
     }
 }

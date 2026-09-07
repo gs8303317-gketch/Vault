@@ -105,21 +105,26 @@ fun ViewerScreen(
     val view = LocalView.current
     val context = LocalContext.current
 
-    val isPdfDocument = item.category == VaultCategory.DOCUMENT &&
-        item.mimeType.equals("application/pdf", ignoreCase = true)
-    val isTextDocument = item.category == VaultCategory.DOCUMENT &&
-        TextEncoding.isTextDocumentMime(item.mimeType)
+    val docKind = remember(item.mimeType, item.displayName, item.category) {
+        if (item.category == VaultCategory.DOCUMENT || item.category == VaultCategory.OTHER) {
+            DocumentMime.viewerKind(item.mimeType, item.displayName)
+        } else {
+            DocumentMime.ViewerKind.OTHER
+        }
+    }
+    val isImmersiveDoc =
+        (item.category == VaultCategory.DOCUMENT || item.category == VaultCategory.OTHER) &&
+            DocumentMime.isImmersiveDocument(docKind)
     val immersive = item.category == VaultCategory.IMAGE ||
         item.category == VaultCategory.VIDEO ||
-        isPdfDocument ||
-        isTextDocument
+        isImmersiveDoc
 
-    // Auto-hide chrome for images / PDF / text; tool-rail taps bump [chromeBump] to reset the timer.
+    // Auto-hide chrome for images / PDF / text-like docs; tool-rail taps bump [chromeBump].
     // Video chrome follows MediaPlayer controls (not this timer).
-    LaunchedEffect(chromeVisible, chromeBump, immersive, item.category, item.id, isPdfDocument, isTextDocument) {
+    LaunchedEffect(chromeVisible, chromeBump, immersive, item.category, item.id, docKind) {
         if (immersive &&
             chromeVisible &&
-            (item.category == VaultCategory.IMAGE || isPdfDocument || isTextDocument)
+            (item.category == VaultCategory.IMAGE || isImmersiveDoc)
         ) {
             delay(3_500)
             chromeVisible = false
@@ -221,7 +226,7 @@ fun ViewerScreen(
                     onNext = onNextMedia,
                     modifier = Modifier.fillMaxSize(),
                 )
-                isPdfDocument -> PdfViewer(
+                docKind == DocumentMime.ViewerKind.PDF -> PdfViewer(
                     openPdfHandle = { repository.openPdfHandle(item.id) },
                     itemId = item.id,
                     title = item.displayName,
@@ -230,7 +235,41 @@ fun ViewerScreen(
                     controlsVisible = chromeVisible,
                     onControlsInteraction = { keepChromeVisible() },
                 )
-                isTextDocument -> TextFileViewer(
+                docKind == DocumentMime.ViewerKind.MARKDOWN -> MarkdownViewer(
+                    loadBytes = { repository.decryptFully(item.id) },
+                    itemId = item.id,
+                    modifier = Modifier.fillMaxSize(),
+                    onSingleTap = { toggleChrome() },
+                    controlsVisible = chromeVisible,
+                    onControlsInteraction = { keepChromeVisible() },
+                )
+                docKind == DocumentMime.ViewerKind.CSV -> CsvViewer(
+                    loadBytes = { repository.decryptFully(item.id) },
+                    itemId = item.id,
+                    modifier = Modifier.fillMaxSize(),
+                    onSingleTap = { toggleChrome() },
+                    controlsVisible = chromeVisible,
+                    onControlsInteraction = { keepChromeVisible() },
+                )
+                docKind == DocumentMime.ViewerKind.HTML -> HtmlViewer(
+                    loadBytes = { repository.decryptFully(item.id) },
+                    itemId = item.id,
+                    modifier = Modifier.fillMaxSize(),
+                    onSingleTap = { toggleChrome() },
+                    controlsVisible = chromeVisible,
+                    onControlsInteraction = { keepChromeVisible() },
+                )
+                docKind == DocumentMime.ViewerKind.OFFICE_TEXT -> OfficeTextViewer(
+                    loadBytes = { repository.decryptFully(item.id) },
+                    mimeType = item.mimeType,
+                    displayName = item.displayName,
+                    itemId = item.id,
+                    modifier = Modifier.fillMaxSize(),
+                    onSingleTap = { toggleChrome() },
+                    controlsVisible = chromeVisible,
+                    onControlsInteraction = { keepChromeVisible() },
+                )
+                docKind == DocumentMime.ViewerKind.PLAIN_TEXT -> TextFileViewer(
                     loadBytes = { repository.decryptFully(item.id) },
                     itemId = item.id,
                     modifier = Modifier.fillMaxSize(),
@@ -293,43 +332,68 @@ fun ViewerScreen(
                     onNext = onNextMedia,
                     modifier = mod,
                 )
-                VaultCategory.DOCUMENT -> {
-                    when {
-                        item.mimeType.equals("application/pdf", ignoreCase = true) -> {
-                            // Immersive path above; fallback if chrome routing changes.
-                            PdfViewer(
-                                openPdfHandle = { repository.openPdfHandle(item.id) },
-                                itemId = item.id,
-                                title = item.displayName,
-                                modifier = mod,
-                                onSingleTap = { toggleChrome() },
-                                controlsVisible = chromeVisible,
-                                onControlsInteraction = { keepChromeVisible() },
-                            )
-                        }
-                        TextEncoding.isTextDocumentMime(item.mimeType) -> {
-                            // Immersive path above; fallback if chrome routing changes.
-                            TextFileViewer(
-                                loadBytes = { repository.decryptFully(item.id) },
-                                itemId = item.id,
-                                modifier = mod,
-                                onSingleTap = { toggleChrome() },
-                                controlsVisible = chromeVisible,
-                                onControlsInteraction = { keepChromeVisible() },
-                            )
-                        }
-                        else -> OtherFileScreen(
+                VaultCategory.DOCUMENT, VaultCategory.OTHER -> {
+                    // Immersive kinds are handled above; OTHER + non-immersive docs use premium shell.
+                    when (docKind) {
+                        DocumentMime.ViewerKind.PDF -> PdfViewer(
+                            openPdfHandle = { repository.openPdfHandle(item.id) },
+                            itemId = item.id,
+                            title = item.displayName,
+                            modifier = mod,
+                            onSingleTap = { toggleChrome() },
+                            controlsVisible = chromeVisible,
+                            onControlsInteraction = { keepChromeVisible() },
+                        )
+                        DocumentMime.ViewerKind.MARKDOWN -> MarkdownViewer(
+                            loadBytes = { repository.decryptFully(item.id) },
+                            itemId = item.id,
+                            modifier = mod,
+                            onSingleTap = { toggleChrome() },
+                            controlsVisible = chromeVisible,
+                            onControlsInteraction = { keepChromeVisible() },
+                        )
+                        DocumentMime.ViewerKind.CSV -> CsvViewer(
+                            loadBytes = { repository.decryptFully(item.id) },
+                            itemId = item.id,
+                            modifier = mod,
+                            onSingleTap = { toggleChrome() },
+                            controlsVisible = chromeVisible,
+                            onControlsInteraction = { keepChromeVisible() },
+                        )
+                        DocumentMime.ViewerKind.HTML -> HtmlViewer(
+                            loadBytes = { repository.decryptFully(item.id) },
+                            itemId = item.id,
+                            modifier = mod,
+                            onSingleTap = { toggleChrome() },
+                            controlsVisible = chromeVisible,
+                            onControlsInteraction = { keepChromeVisible() },
+                        )
+                        DocumentMime.ViewerKind.OFFICE_TEXT -> OfficeTextViewer(
+                            loadBytes = { repository.decryptFully(item.id) },
+                            mimeType = item.mimeType,
+                            displayName = item.displayName,
+                            itemId = item.id,
+                            modifier = mod,
+                            onSingleTap = { toggleChrome() },
+                            controlsVisible = chromeVisible,
+                            onControlsInteraction = { keepChromeVisible() },
+                        )
+                        DocumentMime.ViewerKind.PLAIN_TEXT -> TextFileViewer(
+                            loadBytes = { repository.decryptFully(item.id) },
+                            itemId = item.id,
+                            modifier = mod,
+                            onSingleTap = { toggleChrome() },
+                            controlsVisible = chromeVisible,
+                            onControlsInteraction = { keepChromeVisible() },
+                        )
+                        DocumentMime.ViewerKind.OTHER -> OtherFileScreen(
                             item = item,
                             onExport = { showExportConfirm = true },
+                            loadBytes = { repository.decryptFully(item.id) },
                             modifier = mod,
                         )
                     }
                 }
-                VaultCategory.OTHER -> OtherFileScreen(
-                    item = item,
-                    onExport = { showExportConfirm = true },
-                    modifier = mod,
-                )
                 else -> {}
             }
         }

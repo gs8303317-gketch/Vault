@@ -11,6 +11,7 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.provider.OpenableColumns
+import app.vault.workspace.ui.viewer.DocumentMime
 import app.vault.workspace.auth.SessionManager
 import app.vault.workspace.crypto.KeyHierarchy
 import app.vault.workspace.crypto.VaultCrypto
@@ -197,7 +198,7 @@ class VaultRepository(
                 val vmk = session.requireVmk()
                 val cr = context.contentResolver
                 val name = queryDisplayName(uri) ?: "import-${System.currentTimeMillis()}"
-                val mime = cr.getType(uri) ?: "application/octet-stream"
+                val mime = DocumentMime.resolveImportMime(cr.getType(uri), name)
                 val sizeHint = querySize(uri)
 
                 val id = UUID.randomUUID().toString()

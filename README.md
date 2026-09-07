@@ -1,8 +1,21 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.4.20** — Premium text reader (Phase 2).
+Offline encrypted personal workspace for Android. **v0.4.21** — Document Phase 3 (Markdown / CSV / HTML / OOXML text + OtherFile polish).
+
+## What this release adds (v0.4.21 / versionCode 38)
+
+- **OtherFile premium shell**: rich file card (name, MIME, size, category label); Export via existing SAF path; copy filename; **Open as text** when decrypted bytes look textual (heuristic) — still decrypt-in-memory + wipe.
+- **Markdown** (`text/markdown`, `.md`): lightweight in-app preview (headers / lists / code fences / quotes) + raw/source toggle; reuses text decrypt path.
+- **CSV / TSV**: table preview (first 200 rows / 40 cols, horizontal scroll) + raw text fallback.
+- **HTML**: sandboxed `WebView` `loadDataWithBaseURL(about:blank)` — JS off, `blockNetworkLoads`, http/https/`file`/`content` navigations cancelled / intercepted. **No INTERNET** permission. Source / stripped-text fallback.
+- **OOXML Office** (docx / pptx / xlsx): dependency-free `ZipInputStream` + XML text strip — **read-only text preview**, not an editor. Legacy `.doc` / `.ppt` / `.xls` / RTF → clear “no in-app viewer” + Export.
+- **EPUB**: skipped (no heavy pure-Kotlin reader added); OtherFile labels it export-only.
+- **Mime routing**: `DocumentMime.viewerKind` drives `ViewerScreen`; import uses `resolveImportMime` so extension wins over `octet-stream` / generic `zip` for md/csv/html/docx/…. `VaultCategory` treats more Office / EPUB / RTF as DOCUMENT.
+- **Privacy**: decrypt in memory; wipe byte buffers; no MediaStore; no durable plaintext; no PiP; no seek-prepare.
+- **Tests**: `DocumentMimeTest`, `MarkdownRenderTest`, `CsvTableTest`, `OfficeTextExtractTest`; `TextEncodingTest` updated for plain-text vs HTML/MD/CSV split.
 
 ## What this release adds (v0.4.20 / versionCode 37)
+
 
 - **Premium text reader (Phase 2)**: replaces plain monospace `TextFileViewer` scroll. Font size +/− (persisted), themes **dark / sepia / light paper**, wrap vs horizontal scroll, mono vs sans, optional line numbers, in-file search (next/prev highlight), readable max-width padding when wrapped, keep-screen-on, encoding label in chrome (UTF-8 → UTF-16 / Latin-1 fallback), soft truncate with **Load more** (512k → up to 2M chars; byte cap ~2.5MB) — no OOM dump of huge files.
 - **Immersive chrome**: text/json/xml documents use the same tap show/hide toolbar path as PDF via `ViewerScreen`; auto-hide + control interaction bump.
@@ -214,7 +227,7 @@ Offline encrypted personal workspace for Android. **v0.4.20** — Premium text r
 
 ## Not in this slice (later)
 
-Nested folders, bulk export, tablet two-pane, import cancel/resume, image editor, Office/DOCX preview (Phase 3), cloud sync, calculator disguise, PIN recovery, proper Room migrations (non-destructive), FLAG_SECURE.
+Nested folders, bulk export, tablet two-pane, import cancel/resume, image editor, full Office editors / EPUB reader, cloud sync, calculator disguise, PIN recovery, proper Room migrations (non-destructive), FLAG_SECURE.
 
 ## Limitations (honest)
 

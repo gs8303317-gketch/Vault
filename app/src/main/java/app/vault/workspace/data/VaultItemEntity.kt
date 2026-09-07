@@ -75,9 +75,17 @@ enum class VaultCategory {
                     m == "application/xml" ||
                     m == "application/javascript" ||
                     m == "application/xhtml+xml" ||
+                    m == "application/rtf" ||
+                    m == "application/epub+zip" ||
+                    m == "application/msword" ||
+                    m == "application/vnd.ms-excel" ||
+                    m == "application/vnd.ms-powerpoint" ||
                     m.contains("document") ||
                     m.contains("msword") ||
-                    m.contains("officedocument") -> DOCUMENT
+                    m.contains("ms-excel") ||
+                    m.contains("ms-powerpoint") ||
+                    m.contains("officedocument") ||
+                    m.contains("opendocument") -> DOCUMENT
                 else -> OTHER
             }
         }

@@ -103,17 +103,34 @@ object TextEncoding {
     fun canLoadMore(fullLength: Int, visibleLength: Int): Boolean =
         visibleLength < fullLength && visibleLength < HARD_MAX_CHARS
 
-    fun isTextDocumentMime(mime: String): Boolean {
+    /**
+     * Mime types handled by the plain [TextFileViewer] (not Markdown / CSV / HTML).
+     * Markdown, CSV/TSV, and HTML have dedicated Phase 3 viewers.
+     */
+    fun isPlainTextDocumentMime(mime: String): Boolean {
         val m = mime.lowercase()
+        if (m == "text/markdown" ||
+            m == "text/x-markdown" ||
+            m == "text/csv" ||
+            m == "text/comma-separated-values" ||
+            m == "text/tab-separated-values" ||
+            m == "text/html" ||
+            m == "application/xhtml+xml" ||
+            m == "application/csv"
+        ) {
+            return false
+        }
         return m.startsWith("text/") ||
             m == "application/json" ||
             m == "application/xml" ||
             m == "application/javascript" ||
-            m == "application/xhtml+xml" ||
             m == "application/x-javascript" ||
             m == "application/rss+xml" ||
             m == "application/atom+xml"
     }
+
+    /** @deprecated Prefer [isPlainTextDocumentMime] / [DocumentMime.viewerKind]. */
+    fun isTextDocumentMime(mime: String): Boolean = isPlainTextDocumentMime(mime)
 
     private data class Bom(val charset: Charset, val label: String, val skip: Int)
 
