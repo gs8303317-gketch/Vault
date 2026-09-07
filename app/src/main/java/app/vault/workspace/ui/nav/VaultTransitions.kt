@@ -12,17 +12,21 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 
 /**
- * Centralized Navigation Compose transition specs (Phase 1 motion).
+ * Centralized Navigation Compose transition specs.
  *
- * Forward hub / detail: Material-ish horizontal slide + fade.
- * Auth (FirstRun / Setup / Unlock): soft fade + slight scale (no harsh slide over PIN pad).
- * Viewer: same forward horizontal family for a consistent library→detail open.
+ * Phase 1: Material-ish horizontal slide + fade for hub / detail; soft fade+scale for auth.
+ * Phase 2: Viewer uses soft fade (+ slight scale) so shared-element thumb morph is the hero
+ * motion — horizontal slide fought [SharedTransitionLayout] sharedElement / sharedBounds.
+ *
+ * Predictive back: foundation enabled via manifest; viewer [BackHandler] still calls
+ * exitViewer() (bars restore + pause) before pop. Shared-element scrub during the
+ * predictive gesture is best-effort when immersive restore runs first.
  */
 object VaultTransitions {
 
     private const val ForwardMs = 280
     private const val AuthMs = 240
-    private const val ViewerMs = 300
+    private const val ViewerMs = 320
 
     private val forwardEasing = FastOutSlowInEasing
 
@@ -74,22 +78,26 @@ object VaultTransitions {
     val authPopExit: ExitTransition = authExit
 
     /**
-     * Library→viewer open: horizontal slide + fade (same family as hub forward).
-     * Kept as named aliases so viewer composables can override without drifting from defaults.
+     * Library→viewer: soft fade + slight scale so Phase 2 shared-element thumb morph
+     * reads as the primary motion (horizontal slide competed with sharedElement).
      */
     val viewerEnter: EnterTransition =
-        slideInHorizontally(
-            animationSpec = tween(ViewerMs, easing = forwardEasing),
-            initialOffsetX = { fullWidth -> fullWidth },
-        ) + fadeIn(animationSpec = tween(ViewerMs, easing = forwardEasing))
+        fadeIn(animationSpec = tween(ViewerMs, easing = forwardEasing)) +
+            scaleIn(
+                animationSpec = tween(ViewerMs, easing = forwardEasing),
+                initialScale = 0.96f,
+            )
 
-    val viewerExit: ExitTransition = forwardExit
+    val viewerExit: ExitTransition =
+        fadeOut(animationSpec = tween(ViewerMs / 2, easing = forwardEasing))
 
-    val viewerPopEnter: EnterTransition = forwardPopEnter
+    val viewerPopEnter: EnterTransition =
+        fadeIn(animationSpec = tween(ViewerMs, easing = forwardEasing))
 
     val viewerPopExit: ExitTransition =
-        slideOutHorizontally(
-            animationSpec = tween(ViewerMs, easing = forwardEasing),
-            targetOffsetX = { fullWidth -> fullWidth },
-        ) + fadeOut(animationSpec = tween(ViewerMs, easing = forwardEasing))
+        fadeOut(animationSpec = tween(ViewerMs, easing = forwardEasing)) +
+            scaleOut(
+                animationSpec = tween(ViewerMs, easing = forwardEasing),
+                targetScale = 0.96f,
+            )
 }

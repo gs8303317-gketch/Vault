@@ -5,6 +5,9 @@ import android.content.Context
 import android.content.ContextWrapper
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -76,9 +79,11 @@ import app.vault.workspace.ui.theme.VaultText
 import app.vault.workspace.ui.theme.VaultTextMuted
 import kotlinx.coroutines.delay
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
 @Composable
 fun ViewerScreen(
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
     item: VaultItem,
     repository: VaultRepository,
     onBack: () -> Unit,
@@ -214,6 +219,9 @@ fun ViewerScreen(
                 item.category == VaultCategory.IMAGE -> ImageViewer(
                     loadBytes = { repository.decryptFully(item.id) },
                     mimeType = item.mimeType,
+                    itemId = item.id,
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedVisibilityScope = animatedVisibilityScope,
                     modifier = Modifier.fillMaxSize(),
                     onSingleTap = { toggleChrome() },
                     onPrevious = onPreviousMedia,
@@ -237,6 +245,8 @@ fun ViewerScreen(
                     mimeType = item.mimeType,
                     title = item.displayName,
                     itemId = item.id,
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedVisibilityScope = animatedVisibilityScope,
                     onPlaybackActive = { active ->
                         videoPlaying = active
                         onPlaybackActive(active)
@@ -262,6 +272,9 @@ fun ViewerScreen(
                     openPdfHandle = { repository.openPdfHandle(item.id) },
                     itemId = item.id,
                     title = item.displayName,
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedVisibilityScope = animatedVisibilityScope,
+                    hasThumb = item.hasThumb,
                     modifier = Modifier.fillMaxSize(),
                     onSingleTap = { toggleChrome() },
                     controlsVisible = chromeVisible,
@@ -357,6 +370,8 @@ fun ViewerScreen(
                     mimeType = item.mimeType,
                     title = item.displayName,
                     itemId = item.id,
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedVisibilityScope = animatedVisibilityScope,
                     onPlaybackActive = onPlaybackActive,
                     onPlayerCreated = onPlayerCreated,
                     onGesturesLockedChanged = { locked -> playerLocked = locked },
@@ -371,6 +386,9 @@ fun ViewerScreen(
                             openPdfHandle = { repository.openPdfHandle(item.id) },
                             itemId = item.id,
                             title = item.displayName,
+                            sharedTransitionScope = sharedTransitionScope,
+                            animatedVisibilityScope = animatedVisibilityScope,
+                            hasThumb = item.hasThumb,
                             modifier = mod,
                             onSingleTap = { toggleChrome() },
                             controlsVisible = chromeVisible,

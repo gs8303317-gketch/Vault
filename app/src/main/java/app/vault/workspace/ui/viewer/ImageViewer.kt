@@ -13,8 +13,12 @@ import android.widget.Toast
 import android.view.HapticFeedbackConstants
 import android.view.WindowManager
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import app.vault.workspace.ui.nav.vaultSharedThumb
 import android.view.View
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -127,11 +131,15 @@ enum class SlideshowInterval(val ms: Long, val label: String) {
  * rotate/flip, fit modes, swipe prev/next at scale≈1, HUD resolution chip,
  * slideshow, GIF playback, keep-screen-on, in-vault crop (still images).
  */
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun ImageViewer(
     loadBytes: suspend () -> ByteArray,
     modifier: Modifier = Modifier,
     mimeType: String? = null,
+    itemId: String? = null,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
     onSingleTap: (() -> Unit)? = null,
     onPrevious: (() -> Unit)? = null,
     onNext: (() -> Unit)? = null,
@@ -363,11 +371,22 @@ fun ImageViewer(
                     fun clamp(raw: Offset, s: Float): Offset =
                         clampImageOffset(raw, s, dispW, dispH, containerW, containerH)
 
+                    val sharedMod = if (itemId != null) {
+                        Modifier.vaultSharedThumb(
+                            sharedTransitionScope,
+                            animatedVisibilityScope,
+                            itemId,
+                            useBounds = false,
+                        )
+                    } else {
+                        Modifier
+                    }
                     val contentModifier = Modifier
                         .size(
                             width = with(density) { dispW.toDp() },
                             height = with(density) { dispH.toDp() },
                         )
+                        .then(sharedMod)
                         .graphicsLayer(
                             scaleX = scale * if (flipH) -1f else 1f,
                             scaleY = scale * if (flipV) -1f else 1f,

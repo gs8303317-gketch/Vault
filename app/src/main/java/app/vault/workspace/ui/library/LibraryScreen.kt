@@ -3,7 +3,11 @@ package app.vault.workspace.ui.library
 import android.graphics.Bitmap
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.tween
+import app.vault.workspace.ui.nav.vaultSharedThumb
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -124,9 +128,15 @@ enum class LibraryViewMode(val label: String) {
     LIST("List"),
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(
+    ExperimentalMaterial3Api::class,
+    ExperimentalFoundationApi::class,
+    ExperimentalSharedTransitionApi::class,
+)
 @Composable
 fun LibraryScreen(
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
     items: List<VaultItem>,
     importing: Boolean,
     importProgress: Pair<String, Float>? = null,
@@ -513,6 +523,8 @@ fun LibraryScreen(
                                 ) {
                                     lazyListItems(filtered, key = { it.id }) { item ->
                                         LibraryListRow(
+                                            sharedTransitionScope = sharedTransitionScope,
+                                            animatedVisibilityScope = animatedVisibilityScope,
                                             item = item,
                                             selected = item.id in selectedIds,
                                             selectionMode = selectionMode,
@@ -556,6 +568,8 @@ fun LibraryScreen(
                                 ) {
                                     items(filtered, key = { it.id }) { item ->
                                         LibraryCard(
+                                            sharedTransitionScope = sharedTransitionScope,
+                                            animatedVisibilityScope = animatedVisibilityScope,
                                             item = item,
                                             selected = item.id in selectedIds,
                                             selectionMode = selectionMode,
@@ -620,9 +634,11 @@ private fun CategoryChip(
     )
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalSharedTransitionApi::class)
 @Composable
 private fun LibraryCard(
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
     item: VaultItem,
     selected: Boolean,
     selectionMode: Boolean,
@@ -680,12 +696,20 @@ private fun LibraryCard(
     ) {
         Box(Modifier.fillMaxSize()) {
             if (thumb != null) {
+                val useBounds = item.category == VaultCategory.DOCUMENT ||
+                    item.category == VaultCategory.OTHER
                 Image(
                     bitmap = thumb!!.asImageBitmap(),
                     contentDescription = item.displayName,
                     modifier = Modifier
                         .fillMaxSize()
-                        .clip(MaterialTheme.shapes.medium),
+                        .clip(MaterialTheme.shapes.medium)
+                        .vaultSharedThumb(
+                            sharedTransitionScope,
+                            animatedVisibilityScope,
+                            item.id,
+                            useBounds = useBounds,
+                        ),
                     contentScale = ContentScale.Crop,
                 )
                 Box(
@@ -775,9 +799,11 @@ private fun LibraryCard(
 }
 
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalSharedTransitionApi::class)
 @Composable
 private fun LibraryListRow(
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
     item: VaultItem,
     selected: Boolean,
     selectionMode: Boolean,
@@ -820,10 +846,19 @@ private fun LibraryListRow(
             contentAlignment = Alignment.Center,
         ) {
             if (thumb != null) {
+                val useBounds = item.category == VaultCategory.DOCUMENT ||
+                    item.category == VaultCategory.OTHER
                 Image(
                     bitmap = thumb!!.asImageBitmap(),
                     contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .vaultSharedThumb(
+                            sharedTransitionScope,
+                            animatedVisibilityScope,
+                            item.id,
+                            useBounds = useBounds,
+                        ),
                     contentScale = ContentScale.Crop,
                 )
             } else {

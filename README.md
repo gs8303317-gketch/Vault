@@ -1,6 +1,14 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.4.23** — Navigation motion Phase 1 + predictive back foundation.
+Offline encrypted personal workspace for Android. **v0.4.24** — Shared-element library → viewer (Motion Phase 2).
+
+## What this release adds (v0.4.24 / versionCode 41)
+
+- **Shared-element library → viewer (Phase 2)**: `SharedTransitionLayout` wraps `NavHost`; Library + Viewer destinations receive `SharedTransitionScope` + `AnimatedVisibilityScope`. Thumbnail morph uses key `vault-item-thumb-{id}` via `Modifier.vaultSharedThumb` (`sharedElement` for image/video; `sharedBounds` for PDF/docs).
+- **Surfaces**: grid / list / comfortable thumb `Image`; viewer **IMAGE** main surface; **VIDEO** `PlayerView` container; **PDF** content box when a library thumb exists. Immersive bars, crop, slideshow, PDF gestures, encrypt model, and `BackHandler` → `exitViewer()` unchanged.
+- **Viewer route motion**: soft fade + slight scale (replaces horizontal slide) so the shared morph is the hero; avoids fighting sharedElement.
+- **Predictive back**: still works via `exitViewer()` (bars restore + pause) before pop. Shared-element *gesture scrub* is best-effort when immersive restore runs first — documented in `VaultSharedElements` / `VaultTransitions`.
+- **Wire**: `@OptIn(ExperimentalSharedTransitionApi::class)`; version **0.4.24** / versionCode **41**. Still **no INTERNET**, no PiP, no seek-prepare.
 
 ## What this release adds (v0.4.23 / versionCode 40)
 

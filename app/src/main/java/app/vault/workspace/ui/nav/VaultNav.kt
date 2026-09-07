@@ -6,6 +6,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.runtime.Composable
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -77,6 +79,7 @@ object Routes {
     fun viewer(id: String) = "viewer/$id"
 }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun VaultNav(
     session: SessionManager,
@@ -479,12 +482,15 @@ fun VaultNav(
             }
         },
     ) { scaffoldPadding ->
-    NavHost(
-        navController = nav,
-        startDestination = start,
+    SharedTransitionLayout(
         modifier = Modifier
             .fillMaxSize()
             .padding(scaffoldPadding),
+    ) {
+    NavHost(
+        navController = nav,
+        startDestination = start,
+        modifier = Modifier.fillMaxSize(),
         enterTransition = { VaultTransitions.forwardEnter },
         exitTransition = { VaultTransitions.forwardExit },
         popEnterTransition = { VaultTransitions.forwardPopEnter },
@@ -577,6 +583,8 @@ fun VaultNav(
         }
         composable(Routes.Library) {
             LibraryScreen(
+                sharedTransitionScope = this@SharedTransitionLayout,
+                animatedVisibilityScope = this@composable,
                 items = items,
                 importing = importing,
                 importProgress = importProgress,
@@ -798,6 +806,8 @@ fun VaultNav(
                     else -> null
                 }
                 ViewerScreen(
+                    sharedTransitionScope = this@SharedTransitionLayout,
+                    animatedVisibilityScope = this@composable,
                     item = current,
                     repository = repository,
                     onBack = {
@@ -857,6 +867,7 @@ fun VaultNav(
         }
     }
 
+    } // SharedTransitionLayout
     } // Scaffold
 
     moveItemIds?.let { ids ->

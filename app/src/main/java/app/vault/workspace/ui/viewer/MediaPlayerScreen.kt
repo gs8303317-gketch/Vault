@@ -86,6 +86,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
+import app.vault.workspace.ui.nav.vaultSharedThumb
 import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
@@ -149,6 +153,7 @@ internal val SLEEP_TIMER_OPTIONS_MIN = intArrayOf(0, 5, 15, 30, 45, 60)
  * restored — typically [android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE] (-1f)
  * so system brightness returns. Only the window attr is touched; global system setting is never written.
  */
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun MediaPlayerScreen(
     vatFile: File,
@@ -159,6 +164,8 @@ fun MediaPlayerScreen(
     modifier: Modifier = Modifier,
     title: String? = null,
     itemId: String? = null,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
     onControlsVisibilityChanged: (Boolean) -> Unit = {},
     onGesturesLockedChanged: (Boolean) -> Unit = {},
     onPrevious: (() -> Unit)? = null,
@@ -267,6 +274,8 @@ fun MediaPlayerScreen(
                     isAudio = isAudio,
                     title = title,
                     itemId = itemId,
+                    sharedTransitionScope = sharedTransitionScope,
+                    animatedVisibilityScope = animatedVisibilityScope,
                     onSeekSettlingChanged = { settling -> seekSettlingShared = settling },
                     onSeekAttempt = { target -> markSeekAttempt(target) },
                     onControlsVisibilityChanged = onControlsVisibilityChanged,
@@ -280,11 +289,14 @@ fun MediaPlayerScreen(
 }
 
 @Composable
+@OptIn(ExperimentalSharedTransitionApi::class)
 private fun PremiumPlayerOverlay(
     player: ExoPlayer,
     isAudio: Boolean,
     title: String?,
     itemId: String?,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
     onSeekSettlingChanged: (Boolean) -> Unit,
     onSeekAttempt: (Long) -> Unit,
     onControlsVisibilityChanged: (Boolean) -> Unit,
@@ -686,7 +698,20 @@ private fun PremiumPlayerOverlay(
                     pv.player = null
                     pv.keepScreenOn = false
                 },
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(
+                        if (itemId != null) {
+                            Modifier.vaultSharedThumb(
+                                sharedTransitionScope,
+                                animatedVisibilityScope,
+                                itemId,
+                                useBounds = false,
+                            )
+                        } else {
+                            Modifier
+                        },
+                    ),
             )
         } else {
             Column(

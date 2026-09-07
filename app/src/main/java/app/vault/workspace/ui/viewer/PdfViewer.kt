@@ -13,6 +13,10 @@ import android.view.WindowManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
+import app.vault.workspace.ui.nav.vaultSharedThumb
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -136,10 +140,14 @@ internal val PdfInvertColorMatrix = ColorMatrix(
  * Opens via [openPdfHandle] (proxy / memfd / ashmem — no durable plaintext temp).
  */
 @Composable
+@OptIn(ExperimentalSharedTransitionApi::class)
 fun PdfViewer(
     openPdfHandle: suspend () -> EncryptedPdfHandle,
     itemId: String,
     title: String? = null,
+    sharedTransitionScope: SharedTransitionScope? = null,
+    animatedVisibilityScope: AnimatedVisibilityScope? = null,
+    hasThumb: Boolean = false,
     modifier: Modifier = Modifier,
     onSingleTap: () -> Unit = {},
     controlsVisible: Boolean = true,
@@ -206,9 +214,20 @@ fun PdfViewer(
 
     val bg = if (invert) Color(0xFF0D0D0D) else Color(0xFF1A1A1A)
 
+    val sharedMod = if (hasThumb) {
+        Modifier.vaultSharedThumb(
+            sharedTransitionScope,
+            animatedVisibilityScope,
+            itemId,
+            useBounds = true,
+        )
+    } else {
+        Modifier
+    }
     Box(
         modifier
             .fillMaxSize()
+            .then(sharedMod)
             .background(bg),
         contentAlignment = Alignment.Center,
     ) {
