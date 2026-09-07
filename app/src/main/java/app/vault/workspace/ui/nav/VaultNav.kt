@@ -581,7 +581,16 @@ fun VaultNav(
                 },
             )
         }
-        composable(Routes.Library) {
+        composable(
+            Routes.Library,
+            enterTransition = {
+                when (initialState.destination.route) {
+                    Routes.Unlock, Routes.SetupPin, Routes.FirstRun ->
+                        VaultTransitions.authToLibraryEnter
+                    else -> VaultTransitions.forwardEnter
+                }
+            },
+        ) {
             LibraryScreen(
                 sharedTransitionScope = this@SharedTransitionLayout,
                 animatedVisibilityScope = this@composable,

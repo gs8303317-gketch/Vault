@@ -1,6 +1,16 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.4.24** — Shared-element library → viewer (Motion Phase 2).
+Offline encrypted personal workspace for Android. **v0.4.25** — Dialogs / sheets / micro polish (Motion Phase 3). Motion phases 1–3 complete.
+
+## What this release adds (v0.4.25 / versionCode 42)
+
+- **Dialogs / overlays (Phase 3)**: consistent dismiss (back + scrim) via `VaultMotion.dialogProperties`; `VaultSurface` on confirm / lock / PDF jump / folder / trash dialogs. PDF page-grid custom `Dialog` uses fade+scale enter (`VaultDialogEnter`). Material3 `AlertDialog` window animation kept (no reinvented sheet farm).
+- **FAB / import**: Library import FAB + Folders create FAB scale+fade appear/hide; import progress strip slides/fades via `VaultMotion.overlay*`. Selection mode **BackHandler** exits selection.
+- **Bottom sheet**: Viewer item Info `ModalBottomSheet` stays Material enter/exit; tonalElevation 0 for flat Vault surface. DropdownMenus unchanged (Material defaults).
+- **Unlock → library**: Library enter from Unlock/Setup/FirstRun is **fade only** (`authToLibraryEnter`) so it does not stack with auth `authExit` scale — fixes Phase 1 double-animation feel.
+- **List press**: existing mild card press scale centralized (`VaultMotion.PressScale` / `PressMs`); no heavier press motion.
+- **Snackbar**: Material defaults kept. Shared elements, immersive bars, crop Save, PDF zoom, lock crypto unchanged.
+- **Wire**: specs in `ui/nav/VaultMotion.kt` + `VaultTransitions.authToLibraryEnter`; version **0.4.25** / versionCode **42**. Motion phases **1–3 complete**. Still **no INTERNET**, no PiP, no seek-prepare.
 
 ## What this release adds (v0.4.24 / versionCode 41)
 

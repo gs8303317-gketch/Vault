@@ -38,10 +38,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.vault.workspace.BuildConfig
+import app.vault.workspace.ui.nav.VaultMotion
 import app.vault.workspace.data.formatHumanSize
 import app.vault.workspace.auth.AutoLockController
 import app.vault.workspace.auth.LockType
 import app.vault.workspace.ui.theme.VaultAccent
+import app.vault.workspace.ui.theme.VaultSurface
 import app.vault.workspace.ui.theme.VaultBg
 import app.vault.workspace.ui.theme.VaultDanger
 import app.vault.workspace.ui.theme.VaultTextMuted
@@ -255,6 +257,8 @@ fun SettingsScreen(
     if (showIdlePicker) {
         AlertDialog(
             onDismissRequest = { showIdlePicker = false },
+            properties = VaultMotion.dialogProperties,
+            containerColor = VaultSurface,
             title = { Text("Auto-lock idle time") },
             text = {
                 Column {

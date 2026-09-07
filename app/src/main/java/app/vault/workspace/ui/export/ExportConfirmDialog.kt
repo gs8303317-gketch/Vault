@@ -1,6 +1,8 @@
 package app.vault.workspace.ui.export
 
 import androidx.compose.material3.AlertDialog
+import app.vault.workspace.ui.nav.VaultMotion
+import app.vault.workspace.ui.theme.VaultSurface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -23,6 +25,8 @@ fun ExportConfirmDialog(
     }
     AlertDialog(
         onDismissRequest = onDismiss,
+        properties = VaultMotion.dialogProperties,
+        containerColor = VaultSurface,
         title = { Text("Export unencrypted copy?") },
         text = { Text(body) },
         confirmButton = {

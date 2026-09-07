@@ -1,5 +1,8 @@
 package app.vault.workspace.ui.library
 
+import app.vault.workspace.ui.nav.VaultMotion
+import androidx.compose.animation.AnimatedVisibility
+import androidx.activity.compose.BackHandler
 import android.graphics.Bitmap
 import android.view.HapticFeedbackConstants
 import androidx.compose.animation.core.animateFloatAsState
@@ -178,6 +181,8 @@ fun LibraryScreen(
         selectedIds = emptySet()
     }
 
+    BackHandler(enabled = selectionMode) { exitSelection() }
+
     val filtered = remember(items, query, selectedCategory, favoritesOnly, sort) {
         val q = query.trim()
         val base = items.filter { item ->
@@ -332,7 +337,11 @@ fun LibraryScreen(
             }
         },
         floatingActionButton = {
-            if (!selectionMode) {
+            AnimatedVisibility(
+                visible = !selectionMode,
+                enter = VaultMotion.fabEnter,
+                exit = VaultMotion.fabExit,
+            ) {
                 val view = LocalView.current
                 FloatingActionButton(
                     onClick = {
@@ -455,7 +464,11 @@ fun LibraryScreen(
 
             Spacer(Modifier.height(8.dp))
 
-            if (importing) {
+            AnimatedVisibility(
+                visible = importing,
+                enter = VaultMotion.overlayEnter,
+                exit = VaultMotion.overlayExit,
+            ) {
                 val progress = importProgress
                 Column(
                     Modifier
@@ -665,8 +678,8 @@ private fun LibraryCard(
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (pressed) 0.96f else 1f,
-        animationSpec = tween(100),
+        targetValue = if (pressed) VaultMotion.PressScale else 1f,
+        animationSpec = tween(VaultMotion.PressMs),
         label = "libraryCardPress",
     )
 

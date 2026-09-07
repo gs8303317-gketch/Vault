@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.vault.workspace.auth.LockRules
+import app.vault.workspace.ui.nav.VaultMotion
 import app.vault.workspace.auth.LockType
 import app.vault.workspace.ui.components.LockTypeChooser
 import app.vault.workspace.ui.components.PasswordLockField
@@ -116,6 +117,7 @@ fun ChangePinDialog(
 
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
+        properties = VaultMotion.dialogProperties,
         containerColor = VaultSurface,
         title = { Text(title) },
         text = {

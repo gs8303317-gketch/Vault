@@ -1,5 +1,6 @@
 package app.vault.workspace.ui.viewer
 
+import app.vault.workspace.ui.nav.VaultMotion
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
@@ -466,6 +467,7 @@ fun ViewerScreen(
     if (showTrashConfirm) {
         AlertDialog(
             onDismissRequest = { showTrashConfirm = false },
+            properties = VaultMotion.dialogProperties,
             title = { Text("Move to trash?") },
             text = {
                 Text("“${item.displayName}” will be moved to Trash. You can restore it later.")
@@ -614,6 +616,8 @@ private fun ItemInfoSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         containerColor = VaultSurface,
+        // Material3 sheet enter/exit + scrim; keep skipPartiallyExpanded for snappy full expand.
+        tonalElevation = 0.dp,
     ) {
         Column(
             Modifier

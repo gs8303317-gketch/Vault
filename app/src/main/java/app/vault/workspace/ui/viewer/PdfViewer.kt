@@ -2,6 +2,8 @@
 
 package app.vault.workspace.ui.viewer
 
+import app.vault.workspace.ui.nav.VaultMotion
+import app.vault.workspace.ui.nav.VaultDialogEnter
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
@@ -100,7 +102,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import app.vault.workspace.media.EncryptedPdfHandle
 import app.vault.workspace.media.PdfPageStore
 import app.vault.workspace.ui.theme.VaultAccent
@@ -546,8 +547,9 @@ private fun PdfPageGridDialog(
 ) {
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+        properties = VaultMotion.fullWidthDialogProperties,
     ) {
+        VaultDialogEnter {
         Surface(
             modifier = Modifier
                 .fillMaxWidth(0.94f)
@@ -599,6 +601,7 @@ private fun PdfPageGridDialog(
                 }
             }
         }
+        }
     }
 }
 
@@ -623,6 +626,7 @@ private fun PdfJumpDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        properties = VaultMotion.dialogProperties,
         containerColor = VaultSurface,
         title = { Text("Go to page") },
         text = {

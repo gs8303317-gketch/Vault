@@ -1,5 +1,6 @@
 package app.vault.workspace.ui.trash
 
+import app.vault.workspace.ui.nav.VaultMotion
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -140,6 +141,7 @@ fun TrashScreen(
     if (confirmEmpty) {
         AlertDialog(
             onDismissRequest = { confirmEmpty = false },
+            properties = VaultMotion.dialogProperties,
             title = { Text("Empty trash?") },
             text = {
                 Text("Permanently delete ${items.size} item(s)? This cannot be undone.")
@@ -166,6 +168,8 @@ fun TrashScreen(
     pendingHardDelete?.let { item ->
         AlertDialog(
             onDismissRequest = { pendingHardDelete = null },
+            properties = VaultMotion.dialogProperties,
+            containerColor = VaultSurface,
             title = { Text("Delete forever?") },
             text = {
                 Text("“${item.displayName}” will be permanently deleted.")
@@ -185,7 +189,6 @@ fun TrashScreen(
                     Text("Cancel")
                 }
             },
-            containerColor = VaultSurface,
         )
     }
 }

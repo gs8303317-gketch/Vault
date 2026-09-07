@@ -17,6 +17,8 @@ import androidx.compose.animation.slideOutHorizontally
  * Phase 1: Material-ish horizontal slide + fade for hub / detail; soft fade+scale for auth.
  * Phase 2: Viewer uses soft fade (+ slight scale) so shared-element thumb morph is the hero
  * motion — horizontal slide fought [SharedTransitionLayout] sharedElement / sharedBounds.
+ * Phase 3: Unlock/setup → Library uses [authToLibraryEnter] (fade only) so it does not
+ * stack with auth [authExit] scale; overlay micro-motion lives in [VaultMotion].
  *
  * Predictive back: foundation enabled via manifest; viewer [BackHandler] still calls
  * exitViewer() (bars restore + pause) before pop. Shared-element scrub during the
@@ -76,6 +78,13 @@ object VaultTransitions {
     val authPopEnter: EnterTransition = authEnter
 
     val authPopExit: ExitTransition = authExit
+
+    /**
+     * Unlock / setup → Library: fade only (no scale, no horizontal slide).
+     * Avoids stacking with [authExit] scaleOut (Phase 3 double-animation fix).
+     */
+    val authToLibraryEnter: EnterTransition =
+        fadeIn(animationSpec = tween(AuthMs, easing = forwardEasing))
 
     /**
      * Library→viewer: soft fade + slight scale so Phase 2 shared-element thumb morph

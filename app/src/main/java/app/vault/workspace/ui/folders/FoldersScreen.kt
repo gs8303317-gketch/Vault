@@ -1,5 +1,7 @@
 package app.vault.workspace.ui.folders
 
+import app.vault.workspace.ui.nav.VaultMotion
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -44,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.vault.workspace.data.VaultFolder
 import app.vault.workspace.ui.theme.VaultAccent
+import app.vault.workspace.ui.theme.VaultSurface
 import app.vault.workspace.ui.theme.VaultBg
 import app.vault.workspace.ui.theme.VaultDanger
 import app.vault.workspace.ui.theme.VaultOnAccent
@@ -79,15 +82,21 @@ fun FoldersScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = {
-                    newName = ""
-                    showCreate = true
-                },
-                containerColor = VaultAccent,
-                contentColor = VaultOnAccent,
+            AnimatedVisibility(
+                visible = true,
+                enter = VaultMotion.fabEnter,
+                exit = VaultMotion.fabExit,
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Create folder")
+                FloatingActionButton(
+                    onClick = {
+                        newName = ""
+                        showCreate = true
+                    },
+                    containerColor = VaultAccent,
+                    contentColor = VaultOnAccent,
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Create folder")
+                }
             }
         },
     ) { padding ->
@@ -168,6 +177,8 @@ fun FoldersScreen(
     if (showCreate) {
         AlertDialog(
             onDismissRequest = { showCreate = false },
+            properties = VaultMotion.dialogProperties,
+            containerColor = VaultSurface,
             title = { Text("New folder") },
             text = {
                 OutlinedTextField(
@@ -199,6 +210,8 @@ fun FoldersScreen(
     pendingRename?.let { folder ->
         AlertDialog(
             onDismissRequest = { pendingRename = null },
+            properties = VaultMotion.dialogProperties,
+            containerColor = VaultSurface,
             title = { Text("Rename folder") },
             text = {
                 OutlinedTextField(
@@ -229,6 +242,8 @@ fun FoldersScreen(
     pendingDelete?.let { folder ->
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
+            properties = VaultMotion.dialogProperties,
+            containerColor = VaultSurface,
             title = { Text("Delete folder?") },
             text = {
                 Text(
@@ -258,6 +273,8 @@ fun MoveToFolderDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
+        properties = VaultMotion.dialogProperties,
+        containerColor = VaultSurface,
         title = { Text("Move to folder") },
         text = {
             Column {
