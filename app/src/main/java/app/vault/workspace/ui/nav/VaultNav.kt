@@ -437,4 +437,463 @@ fun VaultNav(
         autoLock.setDeferBackgroundLock(false)
         val item = pendingExport
         pendingExport = null
+            val createDocLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("*/*"),
+    ) { uri: Uri? ->
+        autoLock.setDeferBackgroundLock(false)
+        val item = pendingExport
+        pendingExport = null
+        if (uri == null || item == null) return@rememberLauncherForActivityResult
+        if (session.state.value !is SessionManager.SessionState.Unlocked) {
+            statusMessage = "Cyphr locked during export — unlock and try again"
+            return@rememberLauncherForActivityResult
+        }
+        scope.launch {
+            val result = exportController.export(item.id, uri)
+            statusMessage = result.fold(
+                onSuccess = { "Exported ${item.displayName}" },
+                onFailure = { "Export failed: ${it.message ?: "error"}" },
+            )
+        }
+    }
+
+    val navBackStackEntry by nav.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
+
+    fun popFolderLevel() {
+        if (folderStack.isNotEmpty()) {
+            folderStack = folderStack.dropLast(1)
+        }
+    }
+
+    fun openFolderInLibrary(folder: VaultFolder) {
+        folderStack = folderChainOf(folder, folders)
+    }
+
+    // Nested folders: pop one breadcrumb (exact parent), never jump straight to root.
+    BackHandler(enabled = currentFolderId != null && currentRoute == Routes.Library) {
+        popFolderLevel()
+    }
+
+    val hubRoutes = setOf(Routes.Library, Routes.Folders, Routes.Settings)
+    val showBottomBar = currentRoute in hubRoutes
+    // Leave-app only from Library root (no folder). Hub secondary tabs go Home first.
+    val atLibraryRoot = currentRoute == Routes.Library && currentFolderId == null
+    val atHubSecondary = currentRoute == Routes.Folders || currentRoute == Routes.Settings
+
+    fun navigateHub(route: String) {
+        showExitConfirm = false
+        nav.navigate(route) {
+            popUpTo(Routes.Library) {
+                saveState = true
+            }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+
+    BackHandler(enabled = atHubSecondary) {
+        navigateHub(Routes.Library)
+    }
+
+    BackHandler(enabled = atLibraryRoot) {
+        if (showExitConfirm) {
+            // Double-back while dialog visible → confirm exit
+            (context as? Activity)?.finish()
+        } else {
+            showExitConfirm = true
+        }
+    }
+
+    Scaffold(
+        containerColor = VaultAmoled,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        bottomBar = {
+            if (showBottomBar) {
+                NavigationBar(
+                    containerColor = VaultAmoled,
+                    tonalElevation = 0.dp,
+                ) {
+                    val itemColors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = VaultAccent,
+                        selectedTextColor = VaultAccent,
+                        indicatorColor = VaultAccent.copy(alpha = 0.18f),
+                        unselectedIconColor = VaultTextMuted,
+                        unselectedTextColor = VaultTextMuted,
+                    )
+                    NavigationBarItem(
+                        selected = currentRoute == Routes.Library,
+                        onClick = { navigateHub(Routes.Library) },
+                        icon = {
+                            Icon(
+                                if (currentRoute == Routes.Library) {
+                                    Icons.Filled.VideoLibrary
+                                } else {
+                                    Icons.Outlined.VideoLibrary
+                                },
+                                contentDescription = "Library",
+                            )
+                        },
+                        label = { Text("Library") },
+                        colors = itemColors,
+                        alwaysShowLabel = true,
+                    )
+                    NavigationBarItem(
+                        selected = currentRoute == Routes.Folders,
+                        onClick = { navigateHub(Routes.Folders) },
+                        icon = {
+                            Icon(
+                                if (currentRoute == Routes.Folders) {
+                                    Icons.Filled.Folder
+                                } else {
+                                    Icons.Outlined.Folder
+                                },
+                                contentDescription = "Folders",
+                            )
+                        },
+                        label = { Text("Folders") },
+                        colors = itemColors,
+                        alwaysShowLabel = true,
+                    )
+                    NavigationBarItem(
+                        selected = currentRoute == Routes.Settings,
+                        onClick = { navigateHub(Routes.Settings) },
+                        icon = {
+                            Icon(
+                                if (currentRoute == Routes.Settings) {
+                                    Icons.Filled.Settings
+                                } else {
+                                    Icons.Outlined.Settings
+                                },
+                                contentDescription = "Settings",
+                            )
+                        },
+                        label = { Text("Settings") },
+                        colors = itemColors,
+                        alwaysShowLabel = true,
+                    )
+                }
+            }
+        },
+    ) { scaffoldPadding ->
+    SharedTransitionLayout(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(scaffoldPadding),
+    ) {
+    NavHost(
+        navController = nav,
+        startDestination = start,
+        modifier = Modifier.fillMaxSize(),
+        enterTransition = { VaultTransitions.forwardEnter },
+        exitTransition = { VaultTransitions.forwardExit },
+        popEnterTransition = { VaultTransitions.forwardPopEnter },
+        popExitTransition = { VaultTransitions.forwardPopExit },
+    ) {
+        composable(
+            Routes.FirstRun,
+            enterTransition = { VaultTransitions.authEnter },
+            exitTransition = { VaultTransitions.authExit },
+            popEnterTransition = { VaultTransitions.authPopEnter },
+            popExitTransition = { VaultTransitions.authPopExit },
+        ) {
+            FirstRunScreen(onContinue = { nav.navigate(Routes.SetupPin) })
+        }
+        composable(
+            Routes.SetupPin,
+            enterTransition = { VaultTransitions.authEnter },
+            exitTransition = { VaultTransitions.authExit },
+            popEnterTransition = { VaultTransitions.authPopEnter },
+            popExitTransition = { VaultTransitions.authPopExit },
+        ) {
+            SetupPinScreen(
+                errorMessage = setupError,
+                onLockConfirmed = { type, credential ->
+                    scope.launch {
+                        val result = session.setup(credential, type)
+                        result.onSuccess {
+                            setupError = null
+                            nav.navigate(Routes.Library) {
+                                popUpTo(0) { inclusive = true }
+                            }
+                        }.onFailure {
+                            setupError = it.message ?: "Setup failed"
+                        }
+                    }
+                },
+            )
+        }
+        composable(
+            Routes.Unlock,
+            enterTransition = { VaultTransitions.authEnter },
+            exitTransition = { VaultTransitions.authExit },
+            popEnterTransition = { VaultTransitions.authPopEnter },
+            popExitTransition = { VaultTransitions.authPopExit },
+        ) {
+            val bioReady = biometricHardware && BiometricVault.isEnabled(context)
+            val lockType = session.lockType()
+            UnlockScreen(
+                lockedOutMs = lockoutMs,
+                errorMessage = unlockError,
+                lockType = lockType,
+                pinLength = session.pinLength(),
+                onSubmitCredential = { credential ->
+                    scope.launch {
+                        val result = session.unlock(credential)
+                        result.onSuccess {
+                            unlockError = null
+                            lockoutMs = 0
+                            nav.navigate(Routes.Library) {
+                                popUpTo(0) { inclusive = true }
+                            }
+                        }.onFailure { e ->
+                            when (e) {
+                                is SessionManager.LockedOutException -> {
+                                    lockoutMs = e.remainingMs
+                                    unlockError = null
+                                }
+                                is SessionManager.WrongPinException -> {
+                                    unlockError = "Wrong ${lockType.displayName.lowercase()}"
+                                    lockoutMs = session.lockoutStore().remainingLockMs()
+                                }
+                                is SessionManager.CorruptHeaderException -> {
+                                    unlockError = null
+                                    nav.navigate(Routes.FirstRun) {
+                                        popUpTo(0) { inclusive = true }
+                                    }
+                                }
+                                else -> unlockError = "Unlock failed"
+                            }
+                        }
+                    }
+                },
+                biometricAvailable = bioReady,
+                onBiometricUnlock = if (bioReady) {
+                    { promptBiometricUnlock() }
+                } else {
+                    null
+                },
+            )
+        }
+        composable(
+            Routes.Library,
+            enterTransition = {
+                when (initialState.destination.route) {
+                    Routes.Unlock, Routes.SetupPin, Routes.FirstRun ->
+                        VaultTransitions.authToLibraryEnter
+                    else -> VaultTransitions.forwardEnter
+                }
+            },
+        ) {
+            LibraryScreen(
+                sharedTransitionScope = this@SharedTransitionLayout,
+                animatedVisibilityScope = this@composable,
+                items = items,
+                importing = importing,
+                importProgress = importProgress,
+                statusMessage = statusMessage,
+                onDismissStatus = { statusMessage = null },
+                onImport = {
+                    autoLock.setDeferBackgroundLock(true)
+                    try {
+                        // OpenMultipleDocuments uses SAF; arrayOf("*/*") avoids OEM MIME-list quirks.
+                        openDocLauncher.launch(arrayOf("*/*"))
+                    } catch (e: Exception) {
+                        autoLock.setDeferBackgroundLock(false)
+                        statusMessage = "Could not open file picker: ${e.message ?: "error"}"
+                    }
+                },
+                onOpenItem = { item ->
+                    autoLock.bumpIdle()
+                    nav.navigate(Routes.viewer(item.id))
+                },
+                onSettings = { nav.navigate(Routes.Settings) },
+                onFolders = { nav.navigate(Routes.Folders) },
+                folderTitle = currentFolderName,
+                onClearFolderFilter = if (currentFolderId != null) {
+                    { popFolderLevel() }
+                } else {
+                    null
+                },
+                onToggleFavorite = { item ->
+                    scope.launch {
+                        repository.setFavorite(item.id, !item.favorite)
+                    }
+                },
+                onMoveToTrash = { ids ->
+                    scope.launch {
+                        ids.forEach { repository.moveToTrash(it) }
+                        statusMessage = if (ids.size == 1) {
+                            "Moved to trash"
+                        } else {
+                            "Moved ${ids.size} items to trash"
+                        }
+                    }
+                },
+                onMoveToFolder = { ids ->
+                    moveItemIds = ids
+                },
+                onLoadThumb = { id -> repository.loadThumbBitmap(id) },
+            )
+        }
+        composable(Routes.Folders) {
+            FoldersScreen(
+                folders = folders,
+                onBack = { navigateHub(Routes.Library) },
+                onOpenFolder = { folder ->
+                    openFolderInLibrary(folder)
+                    // Return to library with folder filter; preserve hub state.
+                    navigateHub(Routes.Library)
+                },
+                onCreateFolder = { name ->
+                    scope.launch {
+                        val result = repository.createFolder(name)
+                        statusMessage = result.fold(
+                            onSuccess = { "Created “${it.name}”" },
+                            onFailure = { "Could not create folder: ${it.message}" },
+                        )
+                    }
+                },
+                onRenameFolder = { folder, name ->
+                    scope.launch {
+                        val result = repository.renameFolder(folder.id, name)
+                        statusMessage = result.fold(
+                            onSuccess = {
+                                val trimmed = name.trim()
+                                folderStack = folderStack.map {
+                                    if (it.id == folder.id) it.copy(name = trimmed) else it
+                                }
+                                "Renamed to “$trimmed”"
+                            },
+                            onFailure = { "Could not rename folder: ${it.message}" },
+                        )
+                    }
+                },
+                onDeleteFolder = { folder ->
+                    scope.launch {
+                        repository.deleteFolder(folder.id)
+                        // Drop deleted folder and any crumbs below it.
+                        val idx = folderStack.indexOfFirst { it.id == folder.id }
+                        if (idx >= 0) {
+                            folderStack = folderStack.take(idx)
+                        }
+                        statusMessage = "Deleted folder “${folder.name}”"
+                    }
+                },
+            )
+        }
+        composable(Routes.Settings) {
+            SettingsScreen(
+                onBack = { navigateHub(Routes.Library) },
+                onLockNow = {
+                    session.lock()
+                },
+                onOpenTrash = { nav.navigate(Routes.Trash) },
+                onOpenFolders = { nav.navigate(Routes.Folders) },
+                idleTimeoutMs = idleTimeoutMs,
+                onIdleTimeoutSelected = { autoLock.setIdleTimeoutMs(it) },
+                biometricHardwareAvailable = biometricHardware,
+                biometricEnabled = biometricEnabled,
+                onBiometricToggle = { enable ->
+                    if (enable) {
+                        promptEnableBiometric()
+                    } else {
+                        BiometricVault.disable(context)
+                        biometricEnabled = false
+                        biometricError = null
+                        statusMessage = "Biometric unlock disabled"
+                    }
+                },
+                biometricError = biometricError,
+                storageUsedBytes = storageUsedBytes,
+                currentLockType = session.lockType(),
+                currentPinLength = session.pinLength(),
+                changePinError = changePinError,
+                changePinBusy = changePinBusy,
+                changePinSuccessEpoch = changePinSuccessEpoch,
+                onClearChangePinError = { changePinError = null },
+                onChangeLock = { current, newType, newCred ->
+                    scope.launch {
+                        changePinBusy = true
+                        changePinError = null
+                        val result = session.changeLock(current, newType, newCred)
+                        changePinBusy = false
+                        result.onSuccess {
+                            biometricEnabled = false
+                            changePinSuccessEpoch += 1
+                            statusMessage =
+                                "Lock changed. Biometric unlock was turned off — re-enable in Settings if desired."
+                        }.onFailure { e ->
+                            changePinError = when (e) {
+                                is SessionManager.WrongPinException ->
+                                    "Wrong current ${session.lockType().displayName.lowercase()}"
+                                else -> e.message ?: "Could not change lock"
+                            }
+                        }
+                    }
+                },
+            )
+        }
+        composable(Routes.Trash) {
+            TrashScreen(
+                items = trashItems,
+                onBack = { nav.popBackStack() },
+                onRestore = { item ->
+                    scope.launch {
+                        repository.restoreFromTrash(item.id)
+                        statusMessage = "Restored ${item.displayName}"
+                    }
+                },
+                onDeleteForever = { item ->
+                    scope.launch {
+                        repository.hardDelete(item.id)
+                        statusMessage = "Deleted forever"
+                    }
+                },
+                onEmptyTrash = {
+                    scope.launch {
+                        val n = trashItems.size
+                        repository.emptyTrash()
+                        statusMessage = "Emptied trash ($n)"
+                    }
+                },
+                onLoadThumb = { id -> repository.loadThumbBitmap(id) },
+            )
+        }
+        composable(
+            Routes.Viewer,
+            arguments = listOf(navArgument("id") { type = NavType.StringType }),
+            enterTransition = { VaultTransitions.viewerEnter },
+            exitTransition = { VaultTransitions.viewerExit },
+            popEnterTransition = { VaultTransitions.viewerPopEnter },
+            popExitTransition = { VaultTransitions.viewerPopExit },
+        ) { entry ->
+            val id = entry.arguments?.getString("id") ?: return@composable
+            val fromLibrary = items.find { it.id == id }
+            var fetched by remember(id) { mutableStateOf<VaultItem?>(null) }
+            LaunchedEffect(id, fromLibrary) {
+                if (fromLibrary == null) {
+                    fetched = repository.getItem(id)
+                }
+            }
+            val current = fromLibrary ?: fetched
+            if (current != null) {
+                // Per-category queues: images alone; VIDEO≠AUDIO (no cross-mix).
+                val mediaQueue = remember(current.category, items) {
+                    mediaQueueFor(current.category, items)
+                }
+                val mediaIndex = remember(mediaQueue, current.id) {
+                    mediaQueue.indexOfFirst { it.id == current.id }
+                }
+                // Slideshow/gallery wrap only for images; AV player stays linear.
+                val wrapImages = current.category == VaultCategory.IMAGE && mediaQueue.size > 1
+                val prevMedia = when {
+                    mediaIndex < 0 || mediaQueue.isEmpty() -> null
+                    mediaIndex > 0 -> mediaQueue[mediaIndex - 1]
+                    wrapImages -> mediaQueue.last()
+                    else -> null
+                }
+                val nextMedia = when {
+                    mediaIndex < 0 || mediaQueue.isEmpty() -> null
+                    mediaIndex < mediaQueue.lastIn
   
