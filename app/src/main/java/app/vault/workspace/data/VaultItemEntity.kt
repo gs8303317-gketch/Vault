@@ -71,6 +71,10 @@ enum class VaultCategory {
                 m.startsWith("audio/") -> AUDIO
                 m == "application/pdf" ||
                     m.startsWith("text/") ||
+                    m == "application/json" ||
+                    m == "application/xml" ||
+                    m == "application/javascript" ||
+                    m == "application/xhtml+xml" ||
                     m.contains("document") ||
                     m.contains("msword") ||
                     m.contains("officedocument") -> DOCUMENT

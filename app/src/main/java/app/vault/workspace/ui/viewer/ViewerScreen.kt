@@ -107,16 +107,19 @@ fun ViewerScreen(
 
     val isPdfDocument = item.category == VaultCategory.DOCUMENT &&
         item.mimeType.equals("application/pdf", ignoreCase = true)
+    val isTextDocument = item.category == VaultCategory.DOCUMENT &&
+        TextEncoding.isTextDocumentMime(item.mimeType)
     val immersive = item.category == VaultCategory.IMAGE ||
         item.category == VaultCategory.VIDEO ||
-        isPdfDocument
+        isPdfDocument ||
+        isTextDocument
 
-    // Auto-hide chrome for images; tool-rail taps bump [chromeBump] to reset the timer.
+    // Auto-hide chrome for images / PDF / text; tool-rail taps bump [chromeBump] to reset the timer.
     // Video chrome follows MediaPlayer controls (not this timer).
-    LaunchedEffect(chromeVisible, chromeBump, immersive, item.category, item.id, isPdfDocument) {
+    LaunchedEffect(chromeVisible, chromeBump, immersive, item.category, item.id, isPdfDocument, isTextDocument) {
         if (immersive &&
             chromeVisible &&
-            (item.category == VaultCategory.IMAGE || isPdfDocument)
+            (item.category == VaultCategory.IMAGE || isPdfDocument || isTextDocument)
         ) {
             delay(3_500)
             chromeVisible = false
@@ -227,6 +230,14 @@ fun ViewerScreen(
                     controlsVisible = chromeVisible,
                     onControlsInteraction = { keepChromeVisible() },
                 )
+                isTextDocument -> TextFileViewer(
+                    loadBytes = { repository.decryptFully(item.id) },
+                    itemId = item.id,
+                    modifier = Modifier.fillMaxSize(),
+                    onSingleTap = { toggleChrome() },
+                    controlsVisible = chromeVisible,
+                    onControlsInteraction = { keepChromeVisible() },
+                )
                 else -> {}
             }
 
@@ -296,14 +307,15 @@ fun ViewerScreen(
                                 onControlsInteraction = { keepChromeVisible() },
                             )
                         }
-                        item.mimeType.startsWith("text/") ||
-                            item.mimeType in setOf(
-                                "application/json",
-                                "application/xml",
-                            ) -> {
+                        TextEncoding.isTextDocumentMime(item.mimeType) -> {
+                            // Immersive path above; fallback if chrome routing changes.
                             TextFileViewer(
                                 loadBytes = { repository.decryptFully(item.id) },
+                                itemId = item.id,
                                 modifier = mod,
+                                onSingleTap = { toggleChrome() },
+                                controlsVisible = chromeVisible,
+                                onControlsInteraction = { keepChromeVisible() },
                             )
                         }
                         else -> OtherFileScreen(

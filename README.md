@@ -1,6 +1,13 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.4.19** — Crop Save UX + premium PDF reader (Phase 1).
+Offline encrypted personal workspace for Android. **v0.4.20** — Premium text reader (Phase 2).
+
+## What this release adds (v0.4.20 / versionCode 37)
+
+- **Premium text reader (Phase 2)**: replaces plain monospace `TextFileViewer` scroll. Font size +/− (persisted), themes **dark / sepia / light paper**, wrap vs horizontal scroll, mono vs sans, optional line numbers, in-file search (next/prev highlight), readable max-width padding when wrapped, keep-screen-on, encoding label in chrome (UTF-8 → UTF-16 / Latin-1 fallback), soft truncate with **Load more** (512k → up to 2M chars; byte cap ~2.5MB) — no OOM dump of huge files.
+- **Immersive chrome**: text/json/xml documents use the same tap show/hide toolbar path as PDF via `ViewerScreen`; auto-hide + control interaction bump.
+- **Wire / privacy**: decrypt via `decryptFully` in memory only; byte buffers wiped after decode; string cleared on dispose; prefs in `TextReaderPrefs` (no plaintext on disk). Mime helper covers `text/*`, JSON, XML, JS, XHTML. `VaultCategory` classifies json/xml as DOCUMENT. No Office/DOCX (Phase 3), crop/PDF unchanged.
+- **Tests**: `TextEncodingTest` (decode / truncate / mime) + `TextReaderPrefsTest` (Robolectric persistence).
 
 ## What this release adds (v0.4.19 / versionCode 36)
 
@@ -207,7 +214,7 @@ Offline encrypted personal workspace for Android. **v0.4.19** — Crop Save UX +
 
 ## Not in this slice (later)
 
-Nested folders, bulk export, tablet two-pane, import cancel/resume, image editor, Office preview, cloud sync, calculator disguise, PIN recovery, proper Room migrations (non-destructive), FLAG_SECURE.
+Nested folders, bulk export, tablet two-pane, import cancel/resume, image editor, Office/DOCX preview (Phase 3), cloud sync, calculator disguise, PIN recovery, proper Room migrations (non-destructive), FLAG_SECURE.
 
 ## Limitations (honest)
 
