@@ -17,6 +17,8 @@ import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.Password
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,30 +30,39 @@ import app.vault.workspace.ui.theme.VaultAccent
 import app.vault.workspace.ui.theme.VaultSurface
 import app.vault.workspace.ui.theme.VaultTextMuted
 
+/**
+ * First-run / setup lock-type picker — large tappable cards so PIN is not the
+ * only option that feels available.
+ */
 @Composable
 fun LockTypeChooser(
     selected: LockType?,
     onSelect: (LockType) -> Unit,
     modifier: Modifier = Modifier,
+    /** When true, tapping a card both selects and invokes [onSelect] (caller may advance). */
+    compact: Boolean = false,
 ) {
-    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         LockType.entries.forEach { type ->
             val isSelected = type == selected
-            val shape = RoundedCornerShape(16.dp)
+            val shape = RoundedCornerShape(18.dp)
             Surface(
-                color = VaultSurface,
+                color = if (isSelected) VaultAccent.copy(alpha = 0.12f) else VaultSurface,
                 shape = shape,
                 modifier = Modifier
                     .fillMaxWidth()
                     .border(
-                        width = if (isSelected) 1.5.dp else 1.dp,
-                        color = if (isSelected) VaultAccent else VaultAccent.copy(alpha = 0.2f),
+                        width = if (isSelected) 2.dp else 1.dp,
+                        color = if (isSelected) VaultAccent else VaultAccent.copy(alpha = 0.25f),
                         shape = shape,
                     )
                     .clickable { onSelect(type) },
             ) {
                 Row(
-                    Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                    Modifier.padding(
+                        horizontal = 18.dp,
+                        vertical = if (compact) 16.dp else 20.dp,
+                    ),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
@@ -60,26 +71,34 @@ fun LockTypeChooser(
                             LockType.PASSWORD -> Icons.Default.Password
                             LockType.PATTERN -> Icons.Default.Gesture
                         },
-                        contentDescription = null,
+                        contentDescription = type.displayName,
                         tint = VaultAccent,
-                        modifier = Modifier.size(28.dp),
+                        modifier = Modifier.size(if (compact) 32.dp else 40.dp),
                     )
-                    Spacer(Modifier.size(14.dp))
+                    Spacer(Modifier.size(16.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(type.displayName, style = MaterialTheme.typography.titleMedium)
+                        Text(type.displayName, style = MaterialTheme.typography.titleLarge)
+                        Spacer(Modifier.height(2.dp))
                         Text(
                             when (type) {
-                                LockType.PIN -> "4–6 digits"
-                                LockType.PASSWORD -> "6–10 characters"
-                                LockType.PATTERN -> "Connect at least 4 dots"
+                                LockType.PIN -> "4–6 digits · PIN"
+                                LockType.PASSWORD -> "6–10 characters · Password"
+                                LockType.PATTERN -> "Connect ≥4 dots · Pattern"
                             },
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodyMedium,
                             color = VaultTextMuted,
                         )
                     }
+                    RadioButton(
+                        selected = isSelected,
+                        onClick = { onSelect(type) },
+                        colors = RadioButtonDefaults.colors(
+                            selectedColor = VaultAccent,
+                            unselectedColor = VaultTextMuted,
+                        ),
+                    )
                 }
             }
         }
-        Spacer(Modifier.height(4.dp))
     }
 }

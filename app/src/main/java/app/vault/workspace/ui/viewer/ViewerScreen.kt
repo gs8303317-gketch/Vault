@@ -50,6 +50,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -217,29 +218,31 @@ fun ViewerScreen(
                 .background(Color.Black),
         ) {
             when {
-                item.category == VaultCategory.IMAGE -> ImageViewer(
-                    loadBytes = { repository.decryptFully(item.id) },
-                    mimeType = item.mimeType,
-                    itemId = item.id,
-                    sharedTransitionScope = sharedTransitionScope,
-                    animatedVisibilityScope = animatedVisibilityScope,
-                    modifier = Modifier.fillMaxSize(),
-                    onSingleTap = { toggleChrome() },
-                    onPrevious = onPreviousMedia,
-                    onNext = onNextMedia,
-                    title = item.displayName,
-                    controlsVisible = chromeVisible,
-                    slideshowPlaying = slideshowPlaying,
-                    onSlideshowPlayingChange = onSlideshowPlayingChange,
-                    slideshowIntervalMs = slideshowIntervalMs,
-                    onSlideshowIntervalMsChange = onSlideshowIntervalMsChange,
-                    onCropConfirm = { left, top, right, bottom ->
-                        repository.cropAndReplaceImage(item.id, left, top, right, bottom).also { result ->
-                            if (result.isSuccess) ThumbCache.remove(item.id)
-                        }
-                    },
-                    onControlsInteraction = { keepChromeVisible() },
-                )
+                item.category == VaultCategory.IMAGE -> key(item.id) {
+                    ImageViewer(
+                        loadBytes = { repository.decryptFully(item.id) },
+                        mimeType = item.mimeType,
+                        itemId = item.id,
+                        sharedTransitionScope = sharedTransitionScope,
+                        animatedVisibilityScope = animatedVisibilityScope,
+                        modifier = Modifier.fillMaxSize(),
+                        onSingleTap = { toggleChrome() },
+                        onPrevious = onPreviousMedia,
+                        onNext = onNextMedia,
+                        title = item.displayName,
+                        controlsVisible = chromeVisible,
+                        slideshowPlaying = slideshowPlaying,
+                        onSlideshowPlayingChange = onSlideshowPlayingChange,
+                        slideshowIntervalMs = slideshowIntervalMs,
+                        onSlideshowIntervalMsChange = onSlideshowIntervalMsChange,
+                        onCropConfirm = { left, top, right, bottom ->
+                            repository.cropAndReplaceImage(item.id, left, top, right, bottom).also { result ->
+                                if (result.isSuccess) ThumbCache.remove(item.id)
+                            }
+                        },
+                        onControlsInteraction = { keepChromeVisible() },
+                    )
+                }
                 item.category == VaultCategory.VIDEO -> MediaPlayerScreen(
                     vatFile = repository.blobFile(item.id),
                     loadDek = { repository.unwrapDek(item.id) },

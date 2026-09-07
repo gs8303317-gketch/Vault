@@ -74,30 +74,39 @@ fun SetupPinScreen(
                     .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Spacer(Modifier.height(32.dp))
-                Text("Choose your lock", style = MaterialTheme.typography.headlineSmall)
+                Spacer(Modifier.height(28.dp))
+                Text(
+                    "Choose lock type",
+                    style = MaterialTheme.typography.headlineMedium,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Lock type choose karo — PIN, Password, or Pattern",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = VaultAccent,
+                )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "You can change this anytime in Settings. Credential cannot be recovered.",
+                    "Tap a big card below. You can change this later in Settings. " +
+                        "Credential cannot be recovered.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = VaultTextMuted,
                 )
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(28.dp))
                 LockTypeChooser(
                     selected = lockType,
-                    onSelect = { lockType = it },
-                )
-                Spacer(Modifier.height(16.dp))
-                TextButton(
-                    onClick = {
-                        if (lockType == null) return@TextButton
+                    onSelect = { chosen ->
+                        lockType = chosen
                         resetCredential()
                         step = SetupStep.Enter
                     },
-                    enabled = lockType != null,
-                ) {
-                    Text("Continue", color = VaultAccent)
-                }
+                )
+                Spacer(Modifier.height(20.dp))
+                Text(
+                    "Unlock screen will match the type you pick.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = VaultTextMuted,
+                )
             }
         }
         SetupStep.Enter, SetupStep.Confirm -> {

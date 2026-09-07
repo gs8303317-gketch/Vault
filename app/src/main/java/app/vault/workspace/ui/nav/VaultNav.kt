@@ -1,5 +1,6 @@
 package app.vault.workspace.ui.nav
 
+import android.app.Activity
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -16,13 +17,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -53,6 +57,7 @@ import app.vault.workspace.export.ExportController
 import app.vault.workspace.import.ImportController
 import app.vault.workspace.ui.folders.FoldersScreen
 import app.vault.workspace.ui.theme.VaultAccent
+import app.vault.workspace.ui.theme.VaultDanger
 import app.vault.workspace.ui.theme.VaultBg
 import app.vault.workspace.ui.theme.VaultSurface
 import app.vault.workspace.ui.theme.VaultTextMuted
@@ -118,6 +123,8 @@ fun VaultNav(
     // Image slideshow hoisted here so play/interval survive image→image navigation.
     var imageSlideshowPlaying by remember { mutableStateOf(false) }
     var imageSlideshowIntervalMs by remember { mutableLongStateOf(3_000L) }
+    // Hub-root exit confirm (Library root / bottom-nav leave-app back).
+    var showExitConfirm by remember { mutableStateOf(false) }
     val biometricHardware = remember {
         BiometricVault.isBiometricAvailable(context)
     }
@@ -423,6 +430,17 @@ fun VaultNav(
 
     val hubRoutes = setOf(Routes.Library, Routes.Folders, Routes.Settings)
     val showBottomBar = currentRoute in hubRoutes
+    // Leave-app only from Library root (Folders/Settings still pop to Library).
+    // Nested screens (viewer / trash / settings subflows) keep normal pop.
+    val atLibraryRoot = currentRoute == Routes.Library && currentFolderId == null
+    BackHandler(enabled = atLibraryRoot) {
+        if (showExitConfirm) {
+            // Double-back while dialog visible → confirm exit
+            (context as? Activity)?.finish()
+        } else {
+            showExitConfirm = true
+        }
+    }
 
     fun navigateHub(route: String) {
         if (route == Routes.Library) {
@@ -791,14 +809,8 @@ fun VaultNav(
             }
             val current = fromLibrary ?: fetched
             if (current != null) {
-                // Image queue for gallery/slideshow; AV queue for player prev/next.
-                val mediaQueue = when (current.category) {
-                    VaultCategory.IMAGE -> items.filter { it.category == VaultCategory.IMAGE }
-                    VaultCategory.VIDEO, VaultCategory.AUDIO -> items.filter {
-                        it.category == VaultCategory.VIDEO || it.category == VaultCategory.AUDIO
-                    }
-                    else -> emptyList()
-                }
+                // Per-category queues: images alone; VIDEO≠AUDIO (no cross-mix).
+                val mediaQueue = mediaQueueFor(current.category, items)
                 val mediaIndex = mediaQueue.indexOfFirst { it.id == current.id }
                 // Slideshow/gallery wrap only for images; AV player stays linear.
                 val wrapImages = current.category == VaultCategory.IMAGE && mediaQueue.size > 1
@@ -879,6 +891,34 @@ fun VaultNav(
     } // SharedTransitionLayout
     } // Scaffold
 
+    if (showExitConfirm) {
+        AlertDialog(
+            onDismissRequest = { showExitConfirm = false },
+            // Back while open is handled by BackHandler as double-back → finish.
+            properties = DialogProperties(
+                dismissOnBackPress = false,
+                dismissOnClickOutside = true,
+                usePlatformDefaultWidth = true,
+            ),
+            containerColor = VaultSurface,
+            title = { Text("Exit Vault?") },
+            text = { Text("Close the app? You can also press back again to exit.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showExitConfirm = false
+                        (context as? Activity)?.finish()
+                    },
+                ) { Text("Exit", color = VaultDanger) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showExitConfirm = false }) {
+                    Text("Cancel", color = VaultAccent)
+                }
+            },
+        )
+    }
+
     moveItemIds?.let { ids ->
         MoveToFolderDialog(
             folders = folders,
@@ -901,4 +941,15 @@ fun VaultNav(
             },
         )
     }
+}
+
+/** Prev/next / slideshow / auto-next queues — never mix VIDEO with AUDIO. */
+internal fun mediaQueueFor(
+    category: VaultCategory,
+    items: List<VaultItem>,
+): List<VaultItem> = when (category) {
+    VaultCategory.IMAGE -> items.filter { it.category == VaultCategory.IMAGE }
+    VaultCategory.VIDEO -> items.filter { it.category == VaultCategory.VIDEO }
+    VaultCategory.AUDIO -> items.filter { it.category == VaultCategory.AUDIO }
+    else -> emptyList()
 }

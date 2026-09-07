@@ -43,8 +43,9 @@ fun FirstRunScreen(onContinue: () -> Unit) {
         Spacer(Modifier.height(16.dp))
         Text(
             "Your files stay encrypted on this device. There is no account and no cloud.\n\n" +
-                "Choose a PIN, password, or pattern. It cannot be recovered — if you forget it, " +
-                "your vault is permanently inaccessible. Clearing app data also destroys the vault.",
+                "Next you’ll choose lock type — PIN, Password, or Pattern (lock type choose karo). " +
+                "It cannot be recovered — if you forget it, your vault is permanently inaccessible. " +
+                "Clearing app data also destroys the vault.",
             style = MaterialTheme.typography.bodyLarge,
             color = VaultTextMuted,
             textAlign = TextAlign.Center,
@@ -58,7 +59,7 @@ fun FirstRunScreen(onContinue: () -> Unit) {
                 contentColor = VaultOnAccent,
             ),
         ) {
-            Text("Create lock")
+            Text("Choose lock type")
         }
     }
 }

@@ -190,8 +190,17 @@ fun ImageViewer(
         }
     }
 
-    LaunchedEffect(mimeType, reloadEpoch) {
-        // Reset display state on (re)load / post-crop
+    // Reload when item changes (Nav may reuse the same ImageViewer composition
+    // across viewer/{id} navigations — mimeType alone is not enough).
+    LaunchedEffect(itemId, mimeType, reloadEpoch) {
+        // Reset display state on (re)load / post-crop / new item
+        scale = 1f
+        offset = Offset.Zero
+        rotationDeg = 0
+        flipH = false
+        flipV = false
+        fitMode = ImageFitMode.FIT
+        cropping = false
         error = null
         gifMovie = null
         gifBytes?.fill(0)
@@ -263,22 +272,33 @@ fun ImageViewer(
         }
     }
 
-    // Slideshow: advance via onNext when available; stop at end if null.
-    // Keyed only on playing/interval — onNext lambdas are unstable across recomposition.
-    LaunchedEffect(slideshowPlaying, slideshowIntervalMs) {
+    // Brief HUD pulse when slideshow starts / advances / interval changes.
+    var slideshowHud by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(slideshowHud) {
+        if (slideshowHud != null) {
+            delay(1_200)
+            slideshowHud = null
+        }
+    }
+
+    // Slideshow: advance via onNext when available; wrap handled by parent queue.
+    // MUST key on itemId — Navigation often reuses this composition across viewer/{id}
+    // hops; without itemId the effect ran once then never restarted (timer "did nothing").
+    // onNext lambdas are unstable; read via rememberUpdatedState.
+    // Chrome / single-tap does NOT pause — only pinch/pan/double-tap (and crop).
+    LaunchedEffect(slideshowPlaying, slideshowIntervalMs, itemId) {
         if (!slideshowPlaying) return@LaunchedEffect
-        while (isActive) {
-            delay(currentIntervalMs)
-            if (!currentSlideshowPlaying) break
-            val next = currentOnNext
-            if (next != null) {
-                next.invoke()
-                // New ImageViewer instance continues the session; avoid double-advance.
-                return@LaunchedEffect
-            } else {
-                currentOnSlideshowPlayingChange(false)
-                break
-            }
+        slideshowHud = "Slideshow · ${SlideshowInterval.fromMs(currentIntervalMs).label}"
+        delay(currentIntervalMs)
+        if (!isActive || !currentSlideshowPlaying) return@LaunchedEffect
+        val next = currentOnNext
+        if (next != null) {
+            slideshowHud = "Next · ${SlideshowInterval.fromMs(currentIntervalMs).label}"
+            next.invoke()
+            // Parent navigates; this effect restarts on new itemId (or remount).
+        } else {
+            slideshowHud = "End of album"
+            currentOnSlideshowPlayingChange(false)
         }
     }
 
@@ -627,25 +647,42 @@ fun ImageViewer(
             }
         }
 
-        // HUD resolution chip
+        // HUD resolution chip + slideshow pulse
         val showHud = bitmap != null && intrinsicW > 0 && (hudVisible || controlsVisible)
+        val showSlideHud = slideshowHud != null
         AnimatedVisibility(
-            visible = showHud,
+            visible = showHud || showSlideHud,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(top = 72.dp),
         ) {
-            Text(
-                "${intrinsicW}×$intrinsicH",
-                color = Color.White,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier
-                    .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(10.dp))
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
-            )
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                if (showSlideHud) {
+                    Text(
+                        slideshowHud ?: "",
+                        color = VaultAccent,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier
+                            .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+                if (showHud && intrinsicW > 0) {
+                    Text(
+                        "${intrinsicW}×$intrinsicH",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier
+                            .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                    )
+                }
+            }
         }
 
         // Premium bottom tool rail — single scrollable row (no IconButton clip / truncation)
@@ -729,7 +766,15 @@ fun ImageViewer(
                     tint = if (slideshowPlaying) VaultAccent else VaultTextMuted,
                     onClick = {
                         keepChrome()
-                        onSlideshowPlayingChange(!slideshowPlaying)
+                        val starting = !slideshowPlaying
+                        onSlideshowPlayingChange(starting)
+                        if (starting) {
+                            Toast.makeText(
+                                view.context,
+                                "Slideshow · ${interval.label}",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
                         haptic()
                     },
                 )
@@ -741,6 +786,12 @@ fun ImageViewer(
                         keepChrome()
                         val next = interval.next()
                         onSlideshowIntervalMsChange(next.ms)
+                        Toast.makeText(
+                            view.context,
+                            "Interval · ${next.label}",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                        slideshowHud = "Interval · ${next.label}"
                         haptic()
                     },
                 )

@@ -1,6 +1,14 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.4.25** — Dialogs / sheets / micro polish (Motion Phase 3). Motion phases 1–3 complete.
+Offline encrypted personal workspace for Android. **v0.4.26** — Phase A critical bugs: exit confirm, slideshow timer, split AV queues, lock-type chooser.
+
+## What this release adds (v0.4.26 / versionCode 43)
+
+- **Exit confirmation**: back from Library root (hub leave-app) shows **Exit / Cancel** dialog — does not `finish()` on first back. Double-back while the dialog is open confirms exit. Nested screens (viewer / Settings / Folders / folder filter) still pop normally.
+- **Slideshow timer fix**: root cause — `LaunchedEffect` for advance was keyed only on `playing`/`interval`, so after the first `onNext` navigation Navigation reused the ImageViewer composition and the timer never restarted. Now keyed on **`itemId`** (+ `key(item.id)` in `ViewerScreen`); load/reset also keyed on `itemId`. Play starts advancing every N seconds through **images only** (wrap); interval button toasts + HUD pulse; chrome/single-tap does **not** pause; pinch/pan/double-tap still pause.
+- **VIDEO/AUDIO next split (confirmed bug)**: `mediaQueueFor` — VIDEO prev/next/auto-next only VIDEO; AUDIO only AUDIO (was mixed). Unit test covered.
+- **First-run lock type**: Setup step 1 is impossible-to-miss big cards (PIN / Password / Pattern) with Hinglish+English “Choose lock type”; tap card advances. FirstRun CTA → Setup chooser (routing unchanged). Unlock still matches stored type.
+- **Wire**: version **0.4.26** / versionCode **43**. Still **no INTERNET**, no PiP, no seek-prepare. No full UI redesign (Phase C/D later).
 
 ## What this release adds (v0.4.25 / versionCode 42)
 
