@@ -1,6 +1,15 @@
 # Vault
 
-Offline encrypted personal workspace for Android. **v0.4.27** — Phase B feel-faster: ThumbCache dedupe, IO off main, library/viewer latency wins.
+Offline encrypted personal workspace for Android. **v0.4.28** — Phase C premium library home: pure-black shell, top action bar, chips, denser grid.
+
+## What this release adds (v0.4.28 / versionCode 45)
+
+- **Library shell (Wolf-inspired, Vault gold)**: pure-black (`VaultAmoled`) home + hub; strong top app bar with title + item count, **search** (icon expands into bar), view mode, and sort — no always-visible search field crowding the grid.
+- **Category chips**: All / Favorites / Images / Video / Audio / Docs / Other as rounded icon chips with gold selected state.
+- **Grid density**: tighter gutters, adaptive min tile ~104dp (comfortable 160dp), **14dp rounded** thumbs; VIDEO/AUDIO/DOC/FILE type badges on cards; selection mode **Select all**.
+- **Empty states**: circular gold icon + short copy (empty vault / no matches / no favorites).
+- **Bottom nav**: black bar, tonalElevation 0, filled/outlined icons, gold selected accent — still only Library / Folders / Settings.
+- **Wire**: version **0.4.28** / versionCode **45**. Still **no INTERNET**, no PiP, no seek-prepare. Encryption / shared elements / Phase A–B behavior unchanged. Phase D (login/settings polish) next.
 
 ## What this release adds (v0.4.27 / versionCode 44)
 

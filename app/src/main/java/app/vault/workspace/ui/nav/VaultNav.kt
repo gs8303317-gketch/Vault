@@ -17,6 +17,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -26,6 +29,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -57,8 +61,8 @@ import app.vault.workspace.export.ExportController
 import app.vault.workspace.import.ImportController
 import app.vault.workspace.ui.folders.FoldersScreen
 import app.vault.workspace.ui.theme.VaultAccent
+import app.vault.workspace.ui.theme.VaultAmoled
 import app.vault.workspace.ui.theme.VaultDanger
-import app.vault.workspace.ui.theme.VaultBg
 import app.vault.workspace.ui.theme.VaultSurface
 import app.vault.workspace.ui.theme.VaultTextMuted
 import app.vault.workspace.ui.folders.MoveToFolderDialog
@@ -462,15 +466,18 @@ fun VaultNav(
     }
 
     Scaffold(
-        containerColor = VaultBg,
+        containerColor = VaultAmoled,
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
             if (showBottomBar) {
-                NavigationBar(containerColor = VaultSurface) {
+                NavigationBar(
+                    containerColor = VaultAmoled,
+                    tonalElevation = 0.dp,
+                ) {
                     val itemColors = NavigationBarItemDefaults.colors(
                         selectedIconColor = VaultAccent,
                         selectedTextColor = VaultAccent,
-                        indicatorColor = VaultAccent.copy(alpha = 0.22f),
+                        indicatorColor = VaultAccent.copy(alpha = 0.18f),
                         unselectedIconColor = VaultTextMuted,
                         unselectedTextColor = VaultTextMuted,
                     )
@@ -478,28 +485,52 @@ fun VaultNav(
                         selected = currentRoute == Routes.Library,
                         onClick = { navigateHub(Routes.Library) },
                         icon = {
-                            Icon(Icons.Default.VideoLibrary, contentDescription = "Library")
+                            Icon(
+                                if (currentRoute == Routes.Library) {
+                                    Icons.Filled.VideoLibrary
+                                } else {
+                                    Icons.Outlined.VideoLibrary
+                                },
+                                contentDescription = "Library",
+                            )
                         },
                         label = { Text("Library") },
                         colors = itemColors,
+                        alwaysShowLabel = true,
                     )
                     NavigationBarItem(
                         selected = currentRoute == Routes.Folders,
                         onClick = { navigateHub(Routes.Folders) },
                         icon = {
-                            Icon(Icons.Default.Folder, contentDescription = "Folders")
+                            Icon(
+                                if (currentRoute == Routes.Folders) {
+                                    Icons.Filled.Folder
+                                } else {
+                                    Icons.Outlined.Folder
+                                },
+                                contentDescription = "Folders",
+                            )
                         },
                         label = { Text("Folders") },
                         colors = itemColors,
+                        alwaysShowLabel = true,
                     )
                     NavigationBarItem(
                         selected = currentRoute == Routes.Settings,
                         onClick = { navigateHub(Routes.Settings) },
                         icon = {
-                            Icon(Icons.Default.Settings, contentDescription = "Settings")
+                            Icon(
+                                if (currentRoute == Routes.Settings) {
+                                    Icons.Filled.Settings
+                                } else {
+                                    Icons.Outlined.Settings
+                                },
+                                contentDescription = "Settings",
+                            )
                         },
                         label = { Text("Settings") },
                         colors = itemColors,
+                        alwaysShowLabel = true,
                     )
                 }
             }

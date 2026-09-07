@@ -29,8 +29,10 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -49,6 +51,10 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Inbox
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Description
@@ -103,14 +109,17 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import app.vault.workspace.data.VaultCategory
 import app.vault.workspace.data.VaultItem
 import app.vault.workspace.data.formatHumanSize
 import app.vault.workspace.data.formatReadableDate
 import app.vault.workspace.ui.theme.VaultAccent
+import app.vault.workspace.ui.theme.VaultAmoled
 import app.vault.workspace.ui.theme.VaultBg
 import app.vault.workspace.ui.theme.VaultDanger
 import app.vault.workspace.ui.theme.VaultOnAccent
@@ -158,6 +167,7 @@ fun LibraryScreen(
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     var query by remember { mutableStateOf("") }
+    var searchOpen by remember { mutableStateOf(false) }
     var selectedCategory by remember { mutableStateOf<VaultCategory?>(null) }
     var favoritesOnly by remember { mutableStateOf(false) }
     var selectionMode by remember { mutableStateOf(false) }
@@ -182,6 +192,11 @@ fun LibraryScreen(
     }
 
     BackHandler(enabled = selectionMode) { exitSelection() }
+    BackHandler(enabled = searchOpen && !selectionMode) {
+        searchOpen = false
+        query = ""
+        focusManager.clearFocus()
+    }
 
     val filtered = remember(items, query, selectedCategory, favoritesOnly, sort) {
         val q = query.trim()
@@ -201,7 +216,7 @@ fun LibraryScreen(
     val newestId = filtered.firstOrNull()?.id
 
     Scaffold(
-        containerColor = VaultBg,
+        containerColor = VaultAmoled,
         snackbarHost = {
             SnackbarHost(snackbarHostState) { data ->
                 Snackbar(
@@ -215,13 +230,31 @@ fun LibraryScreen(
         topBar = {
             if (selectionMode) {
                 TopAppBar(
-                    title = { Text("${selectedIds.size} selected") },
+                    title = {
+                        Text(
+                            "${selectedIds.size} selected",
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    },
                     navigationIcon = {
                         IconButton(onClick = { exitSelection() }) {
                             Icon(Icons.Default.Close, contentDescription = "Cancel")
                         }
                     },
                     actions = {
+                        IconButton(
+                            onClick = {
+                                selectedIds = filtered.map { it.id }.toSet()
+                            },
+                            enabled = filtered.isNotEmpty(),
+                        ) {
+                            Text(
+                                "All",
+                                color = if (filtered.isNotEmpty()) VaultAccent else VaultTextMuted,
+                                style = MaterialTheme.typography.labelLarge,
+                                modifier = Modifier.padding(horizontal = 8.dp),
+                            )
+                        }
                         IconButton(
                             onClick = {
                                 if (selectedIds.isNotEmpty()) {
@@ -253,11 +286,88 @@ fun LibraryScreen(
                             )
                         }
                     },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = VaultBg),
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = VaultAmoled,
+                        titleContentColor = VaultText,
+                        navigationIconContentColor = VaultText,
+                        actionIconContentColor = VaultText,
+                    ),
+                )
+            } else if (searchOpen) {
+                TopAppBar(
+                    title = {
+                        OutlinedTextField(
+                            value = query,
+                            onValueChange = { query = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            placeholder = { Text("Search vault", color = VaultTextMuted) },
+                            trailingIcon = {
+                                if (query.isNotEmpty()) {
+                                    IconButton(onClick = { query = "" }) {
+                                        Icon(Icons.Default.Clear, contentDescription = "Clear search")
+                                    }
+                                }
+                            },
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = Color.Transparent,
+                                unfocusedBorderColor = Color.Transparent,
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                cursorColor = VaultAccent,
+                                focusedTextColor = VaultText,
+                                unfocusedTextColor = VaultText,
+                            ),
+                            textStyle = MaterialTheme.typography.titleMedium.copy(color = VaultText),
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(
+                            onClick = {
+                                searchOpen = false
+                                query = ""
+                                focusManager.clearFocus()
+                            },
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Close search",
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = VaultAmoled,
+                        titleContentColor = VaultText,
+                        navigationIconContentColor = VaultText,
+                        actionIconContentColor = VaultAccent,
+                    ),
                 )
             } else {
                 TopAppBar(
-                    title = { Text(folderTitle ?: "Vault") },
+                    title = {
+                        Column {
+                            Text(
+                                folderTitle ?: "Vault",
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            val countLabel = when {
+                                favoritesOnly -> "${filtered.size} favorites"
+                                selectedCategory != null -> "${filtered.size} · ${selectedCategory!!.name.lowercase().replaceFirstChar { it.titlecase() }}"
+                                query.isNotBlank() -> "${filtered.size} results"
+                                else -> "${items.size} items"
+                            }
+                            Text(
+                                countLabel,
+                                color = VaultTextMuted,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontSize = 12.sp,
+                            )
+                        }
+                    },
                     navigationIcon = {
                         if (onClearFolderFilter != null) {
                             IconButton(onClick = onClearFolderFilter) {
@@ -269,6 +379,13 @@ fun LibraryScreen(
                         }
                     },
                     actions = {
+                        IconButton(onClick = { searchOpen = true }) {
+                            Icon(
+                                Icons.Default.Search,
+                                contentDescription = "Search",
+                                tint = VaultAccent,
+                            )
+                        }
                         Box {
                             IconButton(onClick = { viewMenuOpen = true }) {
                                 Icon(
@@ -332,7 +449,12 @@ fun LibraryScreen(
                             }
                         }
                     },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = VaultBg),
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = VaultAmoled,
+                        titleContentColor = VaultText,
+                        navigationIconContentColor = VaultText,
+                        actionIconContentColor = VaultAccent,
+                    ),
                 )
             }
         },
@@ -362,107 +484,81 @@ fun LibraryScreen(
                 .padding(padding),
         ) {
             if (!selectionMode) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp),
-                    singleLine = true,
-                    placeholder = { Text("Search by name", color = VaultTextMuted) },
-                    leadingIcon = {
-                        Icon(Icons.Default.Search, contentDescription = null, tint = VaultTextMuted)
-                    },
-                    trailingIcon = {
-                        if (query.isNotEmpty()) {
-                            IconButton(onClick = { query = "" }) {
-                                Icon(Icons.Default.Clear, contentDescription = "Clear search")
-                            }
-                        }
-                    },
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = VaultAccent,
-                        unfocusedBorderColor = VaultSurface,
-                        focusedContainerColor = VaultSurface,
-                        unfocusedContainerColor = VaultSurface,
-                        cursorColor = VaultAccent,
-                        focusedTextColor = VaultText,
-                        unfocusedTextColor = VaultText,
-                    ),
-                    shape = RoundedCornerShape(12.dp),
-                )
-
-                Spacer(Modifier.height(8.dp))
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CategoryChip(
+                        label = "All",
+                        selected = selectedCategory == null && !favoritesOnly,
+                        icon = Icons.Default.Inbox,
+                        onClick = {
+                            selectedCategory = null
+                            favoritesOnly = false
+                        },
+                    )
+                    CategoryChip(
+                        label = "Favorites",
+                        selected = favoritesOnly,
+                        icon = if (favoritesOnly) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        onClick = {
+                            favoritesOnly = true
+                            selectedCategory = null
+                        },
+                    )
+                    CategoryChip(
+                        label = "Images",
+                        selected = selectedCategory == VaultCategory.IMAGE && !favoritesOnly,
+                        icon = Icons.Default.Image,
+                        onClick = {
+                            selectedCategory = VaultCategory.IMAGE
+                            favoritesOnly = false
+                        },
+                    )
+                    CategoryChip(
+                        label = "Video",
+                        selected = selectedCategory == VaultCategory.VIDEO && !favoritesOnly,
+                        icon = Icons.Default.VideoFile,
+                        onClick = {
+                            selectedCategory = VaultCategory.VIDEO
+                            favoritesOnly = false
+                        },
+                    )
+                    CategoryChip(
+                        label = "Audio",
+                        selected = selectedCategory == VaultCategory.AUDIO && !favoritesOnly,
+                        icon = Icons.Default.AudioFile,
+                        onClick = {
+                            selectedCategory = VaultCategory.AUDIO
+                            favoritesOnly = false
+                        },
+                    )
+                    CategoryChip(
+                        label = "Docs",
+                        selected = selectedCategory == VaultCategory.DOCUMENT && !favoritesOnly,
+                        icon = Icons.Default.Description,
+                        onClick = {
+                            selectedCategory = VaultCategory.DOCUMENT
+                            favoritesOnly = false
+                        },
+                    )
+                    CategoryChip(
+                        label = "Other",
+                        selected = selectedCategory == VaultCategory.OTHER && !favoritesOnly,
+                        icon = Icons.AutoMirrored.Filled.InsertDriveFile,
+                        onClick = {
+                            selectedCategory = VaultCategory.OTHER
+                            favoritesOnly = false
+                        },
+                    )
+                }
             }
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                CategoryChip(
-                    label = "All",
-                    selected = selectedCategory == null && !favoritesOnly,
-                    onClick = {
-                        selectedCategory = null
-                        favoritesOnly = false
-                    },
-                )
-                CategoryChip(
-                    label = "★ Favorites",
-                    selected = favoritesOnly,
-                    onClick = {
-                        favoritesOnly = true
-                        selectedCategory = null
-                    },
-                )
-                CategoryChip(
-                    label = "Photos",
-                    selected = selectedCategory == VaultCategory.IMAGE && !favoritesOnly,
-                    onClick = {
-                        selectedCategory = VaultCategory.IMAGE
-                        favoritesOnly = false
-                    },
-                )
-                CategoryChip(
-                    label = "Videos",
-                    selected = selectedCategory == VaultCategory.VIDEO && !favoritesOnly,
-                    onClick = {
-                        selectedCategory = VaultCategory.VIDEO
-                        favoritesOnly = false
-                    },
-                )
-                CategoryChip(
-                    label = "Audio",
-                    selected = selectedCategory == VaultCategory.AUDIO && !favoritesOnly,
-                    onClick = {
-                        selectedCategory = VaultCategory.AUDIO
-                        favoritesOnly = false
-                    },
-                )
-                CategoryChip(
-                    label = "Documents",
-                    selected = selectedCategory == VaultCategory.DOCUMENT && !favoritesOnly,
-                    onClick = {
-                        selectedCategory = VaultCategory.DOCUMENT
-                        favoritesOnly = false
-                    },
-                )
-                CategoryChip(
-                    label = "Other",
-                    selected = selectedCategory == VaultCategory.OTHER && !favoritesOnly,
-                    onClick = {
-                        selectedCategory = VaultCategory.OTHER
-                        favoritesOnly = false
-                    },
-                )
-            }
-
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
 
             AnimatedVisibility(
                 visible = importing,
@@ -497,40 +593,30 @@ fun LibraryScreen(
             Box(Modifier.fillMaxSize()) {
                 when {
                     items.isEmpty() && !importing -> {
-                        Column(
-                            Modifier.align(Alignment.Center).padding(32.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            Text("No files yet", style = MaterialTheme.typography.titleLarge)
-                            Text(
-                                "Tap + to import photos, videos, audio, or documents.",
-                                color = VaultTextMuted,
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        }
+                        LibraryEmptyState(
+                            icon = Icons.Default.Lock,
+                            title = "Your vault is empty",
+                            body = "Import photos, videos, audio, or documents. Everything stays encrypted on this device.",
+                            modifier = Modifier.align(Alignment.Center),
+                        )
                     }
                     filtered.isEmpty() && !importing -> {
-                        Column(
-                            Modifier.align(Alignment.Center).padding(32.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            Text("No matches", style = MaterialTheme.typography.titleLarge)
-                            Text(
-                                if (favoritesOnly) {
-                                    "No favorites yet. Tap the star on a card."
-                                } else {
-                                    "Try a different search or category filter."
-                                },
-                                color = VaultTextMuted,
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        }
+                        LibraryEmptyState(
+                            icon = if (favoritesOnly) Icons.Default.FavoriteBorder else Icons.Default.Search,
+                            title = if (favoritesOnly) "No favorites yet" else "No matches",
+                            body = if (favoritesOnly) {
+                                "Tap the star on any item to pin it here."
+                            } else {
+                                "Try another search or clear the category filter."
+                            },
+                            modifier = Modifier.align(Alignment.Center),
+                        )
                     }
                     else -> {
                         when (viewMode) {
                             LibraryViewMode.LIST -> {
                                 LazyColumn(
-                                    contentPadding = PaddingValues(12.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                                     verticalArrangement = Arrangement.spacedBy(8.dp),
                                     modifier = Modifier.fillMaxSize(),
                                 ) {
@@ -571,12 +657,12 @@ fun LibraryScreen(
                             }
                             else -> {
                                 val minSize =
-                                    if (viewMode == LibraryViewMode.COMFORTABLE) 156.dp else 112.dp
+                                    if (viewMode == LibraryViewMode.COMFORTABLE) 160.dp else 104.dp
                                 LazyVerticalGrid(
                                     columns = GridCells.Adaptive(minSize = minSize),
-                                    contentPadding = PaddingValues(8.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    contentPadding = PaddingValues(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                                     modifier = Modifier.fillMaxSize(),
                                 ) {
                                     items(filtered, key = { it.id }) { item ->
@@ -626,26 +712,89 @@ fun LibraryScreen(
 private fun CategoryChip(
     label: String,
     selected: Boolean,
+    icon: ImageVector? = null,
     onClick: () -> Unit,
 ) {
     FilterChip(
         selected = selected,
         onClick = onClick,
-        label = { Text(label) },
+        label = {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 1,
+            )
+        },
+        leadingIcon = icon?.let {
+            {
+                Icon(
+                    imageVector = it,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+        },
         colors = FilterChipDefaults.filterChipColors(
             selectedContainerColor = VaultAccent,
             selectedLabelColor = VaultOnAccent,
+            selectedLeadingIconColor = VaultOnAccent,
             containerColor = VaultSurface,
             labelColor = VaultTextMuted,
+            iconColor = VaultTextMuted,
         ),
         border = FilterChipDefaults.filterChipBorder(
             enabled = true,
             selected = selected,
-            borderColor = VaultSurface,
+            borderColor = Color.Transparent,
             selectedBorderColor = VaultAccent,
         ),
+        shape = RoundedCornerShape(50),
+        modifier = Modifier.heightIn(min = 34.dp),
     )
 }
+
+@Composable
+private fun LibraryEmptyState(
+    icon: ImageVector,
+    title: String,
+    body: String,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.padding(horizontal = 36.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(88.dp)
+                .clip(CircleShape)
+                .background(VaultSurface),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = VaultAccent,
+                modifier = Modifier.size(40.dp),
+            )
+        }
+        Text(
+            title,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = VaultText,
+        )
+        Text(
+            body,
+            color = VaultTextMuted,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.widthIn(max = 280.dp),
+        )
+    }
+}
+
+private val LibraryThumbShape = RoundedCornerShape(14.dp)
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalSharedTransitionApi::class)
 @Composable
@@ -693,7 +842,7 @@ private fun LibraryCard(
             }
             .then(
                 if (selected) {
-                    Modifier.border(2.dp, VaultAccent, MaterialTheme.shapes.medium)
+                    Modifier.border(2.dp, VaultAccent, LibraryThumbShape)
                 } else {
                     Modifier
                 },
@@ -705,7 +854,7 @@ private fun LibraryCard(
                 onLongClick = onLongClick,
             ),
         colors = CardDefaults.cardColors(containerColor = VaultSurface),
-        shape = MaterialTheme.shapes.medium,
+        shape = LibraryThumbShape,
     ) {
         Box(Modifier.fillMaxSize()) {
             if (thumb != null) {
@@ -717,7 +866,7 @@ private fun LibraryCard(
                     contentDescription = item.displayName,
                     modifier = Modifier
                         .fillMaxSize()
-                        .clip(MaterialTheme.shapes.medium)
+                        .clip(LibraryThumbShape)
                         .vaultSharedThumb(
                             sharedTransitionScope,
                             animatedVisibilityScope,
@@ -797,6 +946,24 @@ private fun LibraryCard(
                 }
             }
 
+            // Type badge (bottom-end) — gallery-style density cue
+            if (!selectionMode) {
+                val badge = categoryBadge(item.category)
+                if (badge != null) {
+                    Text(
+                        badge,
+                        color = VaultText,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 8.dp, bottom = 34.dp)
+                            .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                    )
+                }
+            }
+
             Text(
                 item.displayName,
                 maxLines = 2,
@@ -806,7 +973,7 @@ private fun LibraryCard(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .fillMaxWidth()
-                    .padding(10.dp),
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
             )
         }
     }
@@ -840,9 +1007,9 @@ private fun LibraryListRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(LibraryThumbShape)
             .background(VaultSurface)
-            .then(if (selected) Modifier.border(2.dp, VaultAccent, RoundedCornerShape(12.dp)) else Modifier)
+            .then(if (selected) Modifier.border(2.dp, VaultAccent, LibraryThumbShape) else Modifier)
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -855,8 +1022,8 @@ private fun LibraryListRow(
         Box(
             Modifier
                 .size(56.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(VaultBg),
+                .clip(RoundedCornerShape(10.dp))
+                .background(VaultAmoled),
             contentAlignment = Alignment.Center,
         ) {
             if (thumb != null) {
@@ -926,6 +1093,15 @@ private fun LibraryListRow(
         }
     }
 }
+
+private fun categoryBadge(category: VaultCategory): String? =
+    when (category) {
+        VaultCategory.IMAGE -> null
+        VaultCategory.VIDEO -> "VIDEO"
+        VaultCategory.AUDIO -> "AUDIO"
+        VaultCategory.DOCUMENT -> "DOC"
+        VaultCategory.OTHER -> "FILE"
+    }
 
 private fun categoryIcon(category: VaultCategory): ImageVector =
     when (category) {
