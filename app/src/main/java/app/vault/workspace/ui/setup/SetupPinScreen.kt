@@ -276,7 +276,7 @@ fun SetupPinScreen(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "Creating vault…",
+                        "Creating vault… wait up to 30s",
                         color = VaultTextMuted,
                         style = MaterialTheme.typography.bodyMedium,
                     )
@@ -325,6 +325,8 @@ fun SetupPinScreen(
                                 if (confirming) acceptConfirm(secret) else acceptFirst(secret)
                             },
                             compact = compact,
+                            // Fresh grid Enter↔Confirm so leftover gesture state cannot stall.
+                            resetKey = step,
                         )
                     }
                 }

@@ -1,6 +1,11 @@
 # Cyphr
 
-Offline encrypted personal workspace for Android (display name **Cyphr**; package `app.vault.workspace` unchanged for upgrades). **v0.4.32** — setup/unlock stuck fix, path-faithful back, folder chrome.
+Offline encrypted personal workspace for Android (display name **Cyphr**; package `app.vault.workspace` unchanged for upgrades). **v0.4.33** — pattern confirm + folder open fixes.
+
+## What this release adds (v0.4.33 / versionCode 50)
+
+- **Pattern confirm stuck**: set busy before PBKDF2; keep spinner until nav; PatternLock `resetKey` on step change.
+- **Folder open → homescreen**: stop `restoreState` on Library when opening a folder; create folder auto-opens into it.
 
 ## What this release adds (v0.4.32 / versionCode 49)
 

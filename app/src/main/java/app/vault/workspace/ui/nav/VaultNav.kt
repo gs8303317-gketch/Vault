@@ -470,6 +470,20 @@ fun VaultNav(
         folderStack = folderChainOf(folder, folders)
     }
 
+    /** Open folder in Library without restoreState wiping the filter (homescreen jump). */
+    fun openFolderAndShowLibrary(folder: VaultFolder) {
+        val chain = folderChainOf(folder, folders)
+        folderStack = chain
+        if (currentRoute != Routes.Library) {
+            nav.navigate(Routes.Library) {
+                popUpTo(Routes.Library) { saveState = false }
+                launchSingleTop = true
+            }
+        }
+        // Re-assert after nav so any hub restore cannot leave us on root.
+        folderStack = chain
+    }
+
     // Nested folders: pop one breadcrumb (exact parent), never jump straight to root.
     BackHandler(enabled = currentFolderId != null && currentRoute == Routes.Library) {
         popFolderLevel()
@@ -483,17 +497,19 @@ fun VaultNav(
 
     fun navigateHub(route: String) {
         showExitConfirm = false
-        // Leaving folder chrome when switching hub tabs (bar only visible at root,
-        // but keep stack clean if opened from Folders list → Library).
+        // Never clear folderStack when going to Library — opening a folder sets it
+        // then navigates here; wiping would dump the user on homescreen/root.
         if (route != Routes.Library) {
             folderStack = emptyList()
         }
         nav.navigate(route) {
             popUpTo(Routes.Library) {
-                saveState = true
+                // saveState only when leaving Library for another hub tab
+                saveState = route != Routes.Library
             }
             launchSingleTop = true
-            restoreState = true
+            // restoreState on Library was restoring root chrome and fighting folderStack
+            restoreState = route != Routes.Library
         }
     }
 
@@ -617,20 +633,27 @@ fun VaultNav(
                 onNavigateBack = { nav.popBackStack() },
                 onLockConfirmed = { type, credential ->
                     if (setupBusy) return@SetupPinScreen
+                    // Set busy synchronously so Confirm UI cannot look idle/stuck.
+                    setupBusy = true
+                    setupError = null
                     scope.launch {
-                        setupBusy = true
-                        setupError = null
-                        val result = withContext(Dispatchers.IO) {
-                            session.setup(credential, type)
-                        }
-                        setupBusy = false
-                        result.onSuccess {
-                            setupError = null
-                            nav.navigate(Routes.Library) {
-                                popUpTo(0) { inclusive = true }
+                        try {
+                            val result = withContext(Dispatchers.IO) {
+                                session.setup(credential, type)
                             }
-                        }.onFailure {
-                            setupError = it.message ?: "Setup failed"
+                            result.onSuccess {
+                                setupError = null
+                                nav.navigate(Routes.Library) {
+                                    popUpTo(0) { inclusive = true }
+                                }
+                                // Keep busy until this screen is gone.
+                            }.onFailure {
+                                setupError = it.message ?: "Setup failed"
+                                setupBusy = false
+                            }
+                        } catch (e: Exception) {
+                            setupError = e.message ?: "Setup failed"
+                            setupBusy = false
                         }
                     }
                 },
@@ -653,37 +676,42 @@ fun VaultNav(
                 busy = unlockBusy,
                 onSubmitCredential = { credential ->
                     if (unlockBusy) return@UnlockScreen
+                    unlockBusy = true
+                    unlockError = null
                     scope.launch {
-                        unlockBusy = true
-                        unlockError = null
-                        val result = withContext(Dispatchers.IO) {
-                            session.unlock(credential)
-                        }
-                        unlockBusy = false
-                        result.onSuccess {
-                            unlockError = null
-                            lockoutMs = 0
-                            nav.navigate(Routes.Library) {
-                                popUpTo(0) { inclusive = true }
+                        try {
+                            val result = withContext(Dispatchers.IO) {
+                                session.unlock(credential)
                             }
-                        }.onFailure { e ->
-                            when (e) {
-                                is SessionManager.LockedOutException -> {
-                                    lockoutMs = e.remainingMs
-                                    unlockError = null
+                            result.onSuccess {
+                                unlockError = null
+                                lockoutMs = 0
+                                nav.navigate(Routes.Library) {
+                                    popUpTo(0) { inclusive = true }
                                 }
-                                is SessionManager.WrongPinException -> {
-                                    unlockError = "Wrong ${lockType.displayName.lowercase()}"
-                                    lockoutMs = session.lockoutStore().remainingLockMs()
-                                }
-                                is SessionManager.CorruptHeaderException -> {
-                                    unlockError = null
-                                    nav.navigate(Routes.FirstRun) {
-                                        popUpTo(0) { inclusive = true }
+                            }.onFailure { e ->
+                                unlockBusy = false
+                                when (e) {
+                                    is SessionManager.LockedOutException -> {
+                                        lockoutMs = e.remainingMs
+                                        unlockError = null
                                     }
+                                    is SessionManager.WrongPinException -> {
+                                        unlockError = "Wrong ${lockType.displayName.lowercase()}"
+                                        lockoutMs = session.lockoutStore().remainingLockMs()
+                                    }
+                                    is SessionManager.CorruptHeaderException -> {
+                                        unlockError = null
+                                        nav.navigate(Routes.FirstRun) {
+                                            popUpTo(0) { inclusive = true }
+                                        }
+                                    }
+                                    else -> unlockError = e.message ?: "Unlock failed"
                                 }
-                                else -> unlockError = e.message ?: "Unlock failed"
                             }
+                        } catch (e: Exception) {
+                            unlockBusy = false
+                            unlockError = e.message ?: "Unlock failed"
                         }
                     }
                 },
@@ -761,15 +789,17 @@ fun VaultNav(
                 folders = folders,
                 onBack = { navigateHub(Routes.Library) },
                 onOpenFolder = { folder ->
-                    openFolderInLibrary(folder)
-                    // Return to library with folder filter; preserve hub state.
-                    navigateHub(Routes.Library)
+                    openFolderAndShowLibrary(folder)
                 },
                 onCreateFolder = { name ->
                     scope.launch {
                         val result = repository.createFolder(name)
                         statusMessage = result.fold(
-                            onSuccess = { "Created “${it.name}”" },
+                            onSuccess = {
+                                // Open new folder immediately so user is not dumped on home.
+                                openFolderAndShowLibrary(it)
+                                "Created “${it.name}”"
+                            },
                             onFailure = { "Could not create folder: ${it.message}" },
                         )
                     }
