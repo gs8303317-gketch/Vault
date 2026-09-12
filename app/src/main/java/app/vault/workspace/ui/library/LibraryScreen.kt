@@ -384,7 +384,7 @@ fun LibraryScreen(
                             IconButton(onClick = onClearFolderFilter) {
                                 Icon(
                                     Icons.AutoMirrored.Filled.ArrowBack,
-                                    contentDescription = "Back",
+                                    contentDescription = "Up",
                                 )
                             }
                         }

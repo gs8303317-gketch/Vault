@@ -1,6 +1,14 @@
 # Cyphr
 
-Offline encrypted personal workspace for Android (display name **Cyphr**; package `app.vault.workspace` unchanged for upgrades). **v0.4.31** — safe cleanup, release minify/shrink, list stability.
+Offline encrypted personal workspace for Android (display name **Cyphr**; package `app.vault.workspace` unchanged for upgrades). **v0.4.32** — setup/unlock stuck fix, path-faithful back, folder chrome.
+
+## What this release adds (v0.4.32 / versionCode 49)
+
+- **Setup/unlock stuck**: confirm advances after lock setup; `session.setup` / `unlock` / `changeLock` (and biometric unwrap) run on **IO**; clear errors on submit; busy guards + pattern confirm via same encoding; interrupted-setup recovery when header exists but prefs lag.
+- **Setup BackHandler**: Confirm → Enter → ChooseType → FirstRun (no jump to start).
+- **Folder chrome**: hide bottom tabs when `folderStack` non-empty; folder top bar ArrowBack pops parent only (`Up`).
+- **Hub back**: Folders/Settings still path-faithful to Library; change-lock dialog Back steps path-faithfully.
+- **Wire**: version **0.4.32** / versionCode **49**. Still **no INTERNET**, no PiP, no seek-prepare. Encryption / `applicationId` unchanged.
 
 ## What this release adds (v0.4.31 / versionCode 48)
 

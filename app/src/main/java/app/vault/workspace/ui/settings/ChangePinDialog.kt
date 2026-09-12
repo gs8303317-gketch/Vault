@@ -1,5 +1,6 @@
 package app.vault.workspace.ui.settings
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -28,21 +30,31 @@ import app.vault.workspace.ui.components.PasswordLockField
 import app.vault.workspace.ui.components.PatternLock
 import app.vault.workspace.ui.components.PinDots
 import app.vault.workspace.ui.components.PinPad
+import app.vault.workspace.ui.setup.patternSecretsMatch
 import app.vault.workspace.ui.theme.VaultAccent
 import app.vault.workspace.ui.theme.VaultDanger
 import app.vault.workspace.ui.theme.VaultSurface
 import app.vault.workspace.ui.theme.VaultTextMuted
 
-private enum class ChangeLockStep {
+internal enum class ChangeLockStep {
     VerifyCurrent,
     ChooseType,
     EnterNew,
     ConfirmNew,
 }
 
+/** Path-faithful back inside change-lock wizard; null = dismiss dialog. */
+internal fun changeLockStepOnBack(step: ChangeLockStep): ChangeLockStep? = when (step) {
+    ChangeLockStep.ConfirmNew -> ChangeLockStep.EnterNew
+    ChangeLockStep.EnterNew -> ChangeLockStep.ChooseType
+    ChangeLockStep.ChooseType -> ChangeLockStep.VerifyCurrent
+    ChangeLockStep.VerifyCurrent -> null
+}
+
 /**
  * Change lock: verify current credential → pick new type → set + confirm.
  * Calls [onSubmit] with (currentCredential, newType, newCredential).
+ * System/UI Back steps back; Cancel on first step dismisses.
  */
 @Composable
 fun ChangePinDialog(
@@ -107,7 +119,11 @@ fun ChangePinDialog(
 
     fun acceptConfirm(secret: String) {
         val type = newType ?: return
-        if (secret != newCred) {
+        val match = when (type) {
+            LockType.PATTERN -> patternSecretsMatch(newCred, secret)
+            else -> secret == newCred
+        }
+        if (!match) {
             localError = "${type.displayName}s do not match"
             confirm = ""
             return
@@ -115,8 +131,37 @@ fun ChangePinDialog(
         onSubmit(current, type, newCred)
     }
 
+    fun stepBackOrDismiss() {
+        if (busy) return
+        when (val prev = changeLockStepOnBack(step)) {
+            null -> onDismiss()
+            ChangeLockStep.VerifyCurrent -> {
+                step = prev
+                current = ""
+                newType = null
+                newCred = ""
+                confirm = ""
+                localError = null
+            }
+            ChangeLockStep.ChooseType -> {
+                step = prev
+                newCred = ""
+                confirm = ""
+                localError = null
+            }
+            ChangeLockStep.EnterNew -> {
+                step = prev
+                confirm = ""
+                localError = null
+            }
+            ChangeLockStep.ConfirmNew -> step = prev
+        }
+    }
+
+    BackHandler(enabled = !busy) { stepBackOrDismiss() }
+
     AlertDialog(
-        onDismissRequest = { if (!busy) onDismiss() },
+        onDismissRequest = { if (!busy) stepBackOrDismiss() },
         properties = VaultMotion.dialogProperties,
         containerColor = VaultSurface,
         title = { Text(title) },
@@ -133,6 +178,12 @@ fun ChangePinDialog(
                 val err = localError ?: errorMessage
                 if (err != null) {
                     Text(err, color = VaultDanger, style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(8.dp))
+                }
+                if (busy) {
+                    CircularProgressIndicator(color = VaultAccent, strokeWidth = 3.dp)
+                    Spacer(Modifier.height(8.dp))
+                    Text("Updating lock…", color = VaultTextMuted, style = MaterialTheme.typography.bodySmall)
                     Spacer(Modifier.height(8.dp))
                 }
 
@@ -152,7 +203,7 @@ fun ChangePinDialog(
                     ChangeLockStep.ChooseType -> {
                         LockTypeChooser(
                             selected = newType,
-                            onSelect = { newType = it },
+                            onSelect = { if (!busy) newType = it },
                         )
                         TextButton(
                             onClick = {
@@ -203,8 +254,11 @@ fun ChangePinDialog(
         },
         confirmButton = {},
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !busy) {
-                Text("Cancel", color = VaultAccent)
+            TextButton(onClick = { stepBackOrDismiss() }, enabled = !busy) {
+                Text(
+                    if (step == ChangeLockStep.VerifyCurrent) "Cancel" else "Back",
+                    color = VaultAccent,
+                )
             }
         },
     )
@@ -245,7 +299,7 @@ private fun CredentialEntry(
                     if (!busy && value.isNotEmpty()) onValueChange(value.dropLast(1))
                 },
                 showEnter = setupMode && confirmAgainstLength == null,
-                enterEnabled = value.length in LockRules.PIN_MIN until LockRules.PIN_MAX,
+                enterEnabled = !busy && value.length in LockRules.PIN_MIN until LockRules.PIN_MAX,
                 onEnter = {
                     if (value.length >= LockRules.PIN_MIN) onComplete(value)
                 },

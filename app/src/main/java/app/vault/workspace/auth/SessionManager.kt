@@ -54,7 +54,48 @@ class SessionManager(private val context: Context) {
         LockRules.validateNew(type, credential)?.let {
             return Result.failure(IllegalArgumentException(it))
         }
-        if (isSetupComplete) return Result.failure(IllegalStateException("Already set up"))
+        // Recover interrupted setup: header may already exist from a prior confirm
+        // that froze on Main-thread PBKDF2 before navigation / before LockPrefs.
+        if (isSetupComplete) {
+            val recovered = unlock(credential)
+            if (recovered.isSuccess) {
+                // Ensure prefs match the credential the user just confirmed.
+                lockPrefs.setLock(
+                    type,
+                    pinLength = if (type == LockType.PIN) credential.length else null,
+                )
+                return Result.success(Unit)
+            }
+            val hdr = readValidHeader()
+            if (hdr != null) {
+                // Prefs may still be default (setLock never ran). Try raw unwrap.
+                return try {
+                    val chars = credential.toCharArray()
+                    val kek = KeyHierarchy.deriveKek(chars, hdr.salt, hdr.iterations)
+                    try {
+                        chars.fill('\u0000')
+                        val unlocked = KeyHierarchy.unwrapVmk(kek, hdr.wrappedVmk)
+                        lockPrefs.setLock(
+                            type,
+                            pinLength = if (type == LockType.PIN) credential.length else null,
+                        )
+                        KeyHierarchy.wipe(vmk)
+                        vmk = unlocked
+                        lockout.recordSuccess()
+                        ensureDirs()
+                        _state.value = SessionState.Unlocked
+                        Result.success(Unit)
+                    } finally {
+                        KeyHierarchy.wipe(kek)
+                    }
+                } catch (_: Exception) {
+                    Result.failure(IllegalStateException("Already set up"))
+                }
+            }
+            // Corrupt header was discarded — fall through to fresh setup.
+        } else {
+            discardCorruptHeader()
+        }
         return try {
             val salt = KeyHierarchy.generateSalt()
             val newVmk = KeyHierarchy.generateVmk()
@@ -356,10 +397,15 @@ class SessionManager(private val context: Context) {
 
     private fun discardCorruptHeader() {
         val f = headerFile()
-        if (!f.exists()) return
+        if (!f.exists() && !File(f.parentFile, "vault.hdr.part").exists()) return
         if (readValidHeader() == null) {
             f.delete()
             File(f.parentFile, "vault.hdr.part").delete()
+            // Keep prefs in sync so a corrupt header cannot leave stale lock type.
+            try {
+                lockPrefs.clear()
+            } catch (_: Exception) {
+            }
         }
     }
 

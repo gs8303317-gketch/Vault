@@ -74,7 +74,9 @@ import app.vault.workspace.ui.setup.SetupPinScreen
 import app.vault.workspace.ui.trash.TrashScreen
 import app.vault.workspace.ui.unlock.UnlockScreen
 import app.vault.workspace.ui.viewer.ViewerScreen
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 
 object Routes {
@@ -123,6 +125,8 @@ fun VaultNav(
     val start = if (session.isSetupComplete) Routes.Unlock else Routes.FirstRun
 
     var setupError by remember { mutableStateOf<String?>(null) }
+    var setupBusy by remember { mutableStateOf(false) }
+    var unlockBusy by remember { mutableStateOf(false) }
     var unlockError by remember { mutableStateOf<String?>(null) }
     var lockoutMs by remember { mutableLongStateOf(0L) }
     var importing by remember { mutableStateOf(false) }
@@ -288,7 +292,9 @@ fun VaultNav(
                         scope.launch {
                             try {
                                 val vmk = BiometricVault.unwrap(context, crypto)
-                                val unlockResult = session.unlockWithVmk(vmk)
+                                val unlockResult = withContext(Dispatchers.IO) {
+                                    session.unlockWithVmk(vmk)
+                                }
                                 unlockResult.onSuccess {
                                     unlockError = null
                                     lockoutMs = 0
@@ -470,13 +476,18 @@ fun VaultNav(
     }
 
     val hubRoutes = setOf(Routes.Library, Routes.Folders, Routes.Settings)
-    val showBottomBar = currentRoute in hubRoutes
+    val showBottomBar = currentRoute in hubRoutes && folderStack.isEmpty()
     // Leave-app only from Library root (no folder). Hub secondary tabs go Home first.
     val atLibraryRoot = currentRoute == Routes.Library && currentFolderId == null
     val atHubSecondary = currentRoute == Routes.Folders || currentRoute == Routes.Settings
 
     fun navigateHub(route: String) {
         showExitConfirm = false
+        // Leaving folder chrome when switching hub tabs (bar only visible at root,
+        // but keep stack clean if opened from Folders list → Library).
+        if (route != Routes.Library) {
+            folderStack = emptyList()
+        }
         nav.navigate(route) {
             popUpTo(Routes.Library) {
                 saveState = true
@@ -602,9 +613,17 @@ fun VaultNav(
         ) {
             SetupPinScreen(
                 errorMessage = setupError,
+                busy = setupBusy,
+                onNavigateBack = { nav.popBackStack() },
                 onLockConfirmed = { type, credential ->
+                    if (setupBusy) return@SetupPinScreen
                     scope.launch {
-                        val result = session.setup(credential, type)
+                        setupBusy = true
+                        setupError = null
+                        val result = withContext(Dispatchers.IO) {
+                            session.setup(credential, type)
+                        }
+                        setupBusy = false
                         result.onSuccess {
                             setupError = null
                             nav.navigate(Routes.Library) {
@@ -631,9 +650,16 @@ fun VaultNav(
                 errorMessage = unlockError,
                 lockType = lockType,
                 pinLength = session.pinLength(),
+                busy = unlockBusy,
                 onSubmitCredential = { credential ->
+                    if (unlockBusy) return@UnlockScreen
                     scope.launch {
-                        val result = session.unlock(credential)
+                        unlockBusy = true
+                        unlockError = null
+                        val result = withContext(Dispatchers.IO) {
+                            session.unlock(credential)
+                        }
+                        unlockBusy = false
                         result.onSuccess {
                             unlockError = null
                             lockoutMs = 0
@@ -656,7 +682,7 @@ fun VaultNav(
                                         popUpTo(0) { inclusive = true }
                                     }
                                 }
-                                else -> unlockError = "Unlock failed"
+                                else -> unlockError = e.message ?: "Unlock failed"
                             }
                         }
                     }
@@ -810,7 +836,9 @@ fun VaultNav(
                     scope.launch {
                         changePinBusy = true
                         changePinError = null
-                        val result = session.changeLock(current, newType, newCred)
+                        val result = withContext(Dispatchers.IO) {
+                            session.changeLock(current, newType, newCred)
+                        }
                         changePinBusy = false
                         result.onSuccess {
                             biometricEnabled = false

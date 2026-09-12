@@ -42,6 +42,11 @@ class LockPrefs(context: Context) {
         editor.apply()
     }
 
+    /** Wipe lock UX prefs together with a discarded corrupt header. */
+    fun clear() {
+        prefs.edit().clear().apply()
+    }
+
     companion object {
         private const val PREFS = "vault_lock_prefs"
         private const val KEY_TYPE = "lock_type"

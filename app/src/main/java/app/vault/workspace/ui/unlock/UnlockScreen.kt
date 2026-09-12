@@ -65,6 +65,7 @@ fun UnlockScreen(
     pinLength: Int = LockRules.PIN_MIN,
     biometricAvailable: Boolean = false,
     onBiometricUnlock: (() -> Unit)? = null,
+    busy: Boolean = false,
 ) {
     val submit = onSubmitCredential
     var pin by remember(lockType) { mutableStateOf("") }
@@ -95,7 +96,7 @@ fun UnlockScreen(
         }
     }
 
-    val enabled = remaining <= 0L
+    val enabled = remaining <= 0L && !busy
     val landscape =
         LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     val pinSlots = pinLength.coerceIn(LockRules.PIN_MIN, LockRules.PIN_MAX)
