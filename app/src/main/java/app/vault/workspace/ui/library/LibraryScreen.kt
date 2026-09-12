@@ -845,150 +845,140 @@ private fun LibraryCard(
         label = "libraryCardPress",
     )
 
-    Card(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .aspectRatio(1f)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
             }
-            .then(
-                if (selected) {
-                    Modifier.border(2.dp, VaultAccent, LibraryThumbShape)
-                } else {
-                    Modifier
-                },
-            )
             .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = onClick,
                 onLongClick = onLongClick,
             ),
-        colors = CardDefaults.cardColors(containerColor = VaultSurface),
-        shape = LibraryThumbShape,
     ) {
-        Box(Modifier.fillMaxSize()) {
-            if (thumb != null) {
-                val useBounds = item.category == VaultCategory.DOCUMENT ||
-                    item.category == VaultCategory.OTHER
-                val imageBitmap = remember(thumb) { thumb!!.asImageBitmap() }
-                Image(
-                    bitmap = imageBitmap,
-                    contentDescription = item.displayName,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clip(LibraryThumbShape)
-                        .vaultSharedThumb(
-                            sharedTransitionScope,
-                            animatedVisibilityScope,
-                            item.id,
-                            useBounds = useBounds,
-                        ),
-                    contentScale = ContentScale.Crop,
-                )
-                Box(
-                    Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .height(56.dp)
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color.Transparent, Color(0xCC0B0C0E)),
-                            ),
-                        ),
-                )
-            } else {
-                Icon(
-                    imageVector = categoryIcon(item.category),
-                    contentDescription = item.category.name,
-                    tint = VaultAccent,
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .size(36.dp)
-                        .padding(bottom = 12.dp),
-                )
-            }
-
-            if (isNew && !selectionMode) {
-                Text(
-                    "NEW",
-                    color = VaultOnAccent,
-                    style = MaterialTheme.typography.labelSmall,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(6.dp)
-                        .background(VaultAccent, RoundedCornerShape(6.dp))
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                )
-            }
-
-            if (selectionMode) {
-                Icon(
-                    imageVector = if (selected) {
-                        Icons.Default.CheckCircle
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .then(
+                    if (selected) {
+                        Modifier.border(2.dp, VaultAccent, LibraryThumbShape)
                     } else {
-                        Icons.Default.RadioButtonUnchecked
+                        Modifier
                     },
-                    contentDescription = if (selected) "Selected" else "Not selected",
-                    tint = if (selected) VaultAccent else Color.White.copy(alpha = 0.85f),
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(6.dp)
-                        .size(22.dp)
-                        .background(Color.Black.copy(alpha = 0.35f), CircleShape)
-                        .padding(2.dp),
-                )
-            } else {
-                IconButton(
-                    onClick = onToggleFavorite,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .size(36.dp),
-                ) {
-                    Icon(
-                        imageVector = if (item.favorite) Icons.Default.Star else Icons.Default.StarBorder,
-                        contentDescription = if (item.favorite) "Unfavorite" else "Favorite",
-                        tint = if (item.favorite) VaultAccent else Color.White.copy(alpha = 0.9f),
+                ),
+            colors = CardDefaults.cardColors(containerColor = VaultSurface),
+            shape = LibraryThumbShape,
+        ) {
+            Box(Modifier.fillMaxSize()) {
+                if (thumb != null) {
+                    val useBounds = item.category == VaultCategory.DOCUMENT ||
+                        item.category == VaultCategory.OTHER
+                    val imageBitmap = remember(thumb) { thumb!!.asImageBitmap() }
+                    Image(
+                        bitmap = imageBitmap,
+                        contentDescription = item.displayName,
                         modifier = Modifier
-                            .size(20.dp)
-                            .background(Color.Black.copy(alpha = 0.35f), CircleShape)
-                            .padding(2.dp),
+                            .fillMaxSize()
+                            .clip(LibraryThumbShape)
+                            .vaultSharedThumb(
+                                sharedTransitionScope,
+                                animatedVisibilityScope,
+                                item.id,
+                                useBounds = useBounds,
+                            ),
+                        contentScale = ContentScale.Crop,
+                    )
+                } else {
+                    Icon(
+                        imageVector = categoryIcon(item.category),
+                        contentDescription = item.category.name,
+                        tint = VaultAccent,
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .size(36.dp),
                     )
                 }
-            }
 
-            // Type badge (bottom-end) — gallery-style density cue
-            if (!selectionMode) {
-                val badge = categoryBadge(item.category)
-                if (badge != null) {
+                if (isNew && !selectionMode) {
                     Text(
-                        badge,
-                        color = VaultText,
+                        "NEW",
+                        color = VaultOnAccent,
                         style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Medium,
                         modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(end = 8.dp, bottom = 34.dp)
-                            .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(6.dp))
+                            .align(Alignment.TopStart)
+                            .padding(6.dp)
+                            .background(VaultAccent, RoundedCornerShape(6.dp))
                             .padding(horizontal = 6.dp, vertical = 2.dp),
                     )
                 }
-            }
 
-            Text(
-                item.displayName,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.labelLarge,
-                color = VaultText,
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxWidth()
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
-            )
+                if (selectionMode) {
+                    Icon(
+                        imageVector = if (selected) {
+                            Icons.Default.CheckCircle
+                        } else {
+                            Icons.Default.RadioButtonUnchecked
+                        },
+                        contentDescription = if (selected) "Selected" else "Not selected",
+                        tint = if (selected) VaultAccent else Color.White.copy(alpha = 0.85f),
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(6.dp)
+                            .size(22.dp)
+                            .background(Color.Black.copy(alpha = 0.35f), CircleShape)
+                            .padding(2.dp),
+                    )
+                } else {
+                    IconButton(
+                        onClick = onToggleFavorite,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .size(36.dp),
+                    ) {
+                        Icon(
+                            imageVector = if (item.favorite) Icons.Default.Star else Icons.Default.StarBorder,
+                            contentDescription = if (item.favorite) "Unfavorite" else "Favorite",
+                            tint = if (item.favorite) VaultAccent else Color.White.copy(alpha = 0.9f),
+                            modifier = Modifier
+                                .size(20.dp)
+                                .background(Color.Black.copy(alpha = 0.35f), CircleShape)
+                                .padding(2.dp),
+                        )
+                    }
+                }
+
+                if (!selectionMode) {
+                    val badge = categoryBadge(item.category)
+                    if (badge != null) {
+                        Text(
+                            badge,
+                            color = VaultText,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(8.dp)
+                                .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
+                    }
+                }
+            }
         }
+        Text(
+            item.displayName,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            style = MaterialTheme.typography.labelMedium,
+            color = VaultText,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp, vertical = 6.dp),
+        )
     }
 }
 

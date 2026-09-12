@@ -1,6 +1,12 @@
 # Cyphr
 
-Offline encrypted personal workspace for Android (display name **Cyphr**; package `app.vault.workspace` unchanged for upgrades). **v0.4.33** — pattern confirm + folder open fixes.
+Offline encrypted personal workspace for Android (display name **Cyphr**; package `app.vault.workspace` unchanged for upgrades). **v0.4.34** — pattern confirm + folder open fixes.
+
+## What this release adds (v0.4.34 / versionCode 51)
+
+- Grid names under thumbnails (not overlaid).
+- Nested folders: browse into a folder, + creates subfolder, Open files for contents.
+- Text files: select/copy; Edit + Save in reader.
 
 ## What this release adds (v0.4.33 / versionCode 50)
 

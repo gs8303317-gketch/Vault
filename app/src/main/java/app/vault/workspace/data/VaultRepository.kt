@@ -472,6 +472,29 @@ class VaultRepository(
      * (atomic encryptStream .part → .vat). Updates [sizeBytes] and optionally mime / thumb.
      * App-private temps only; wiped on success/fail. No MediaStore scan.
      */
+    /** Replace plaintext document bytes (UTF-8) keeping the same item id / DEK wrap. */
+    suspend fun replaceTextContent(id: String, text: String): Result<Unit> = withContext(Dispatchers.IO) {
+        val work = File(session.tmpDir(), "txtreplace-$id-${System.nanoTime()}").also { it.mkdirs() }
+        var dek: ByteArray? = null
+        var plain: ByteArray? = null
+        try {
+            val entity = dao.getById(id)
+                ?: return@withContext Result.failure(IllegalStateException("Missing item"))
+            val key = KeyHierarchy.unwrapDek(session.requireVmk(), entity.dekWrap)
+            dek = key
+            plain = text.toByteArray(Charsets.UTF_8)
+            VaultCrypto.encryptBytes(plain!!, key, blobFile(id), work)
+            dao.setSizeBytes(id, plain!!.size.toLong())
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        } finally {
+            plain?.fill(0)
+            dek?.let { KeyHierarchy.wipe(it) }
+            wipeWorkDir(work)
+        }
+    }
+
     suspend fun replaceImageBlob(
         id: String,
         plaintext: ByteArray,

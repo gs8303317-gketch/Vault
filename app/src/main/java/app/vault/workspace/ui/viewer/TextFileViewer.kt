@@ -29,11 +29,15 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LightMode
@@ -93,6 +97,7 @@ fun TextFileViewer(
     onSingleTap: () -> Unit = {},
     controlsVisible: Boolean = true,
     onControlsInteraction: () -> Unit = {},
+    onSave: (suspend (String) -> Result<Unit>)? = null,
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -118,6 +123,10 @@ fun TextFileViewer(
     var searchQuery by remember { mutableStateOf("") }
     var matchIndex by remember { mutableIntStateOf(0) }
     var matchLineIndices by remember { mutableStateOf<List<Int>>(emptyList()) }
+    var editing by remember { mutableStateOf(false) }
+    var draft by remember { mutableStateOf("") }
+    var saveBusy by remember { mutableStateOf(false) }
+    var saveError by remember { mutableStateOf<String?>(null) }
 
     val listState = rememberLazyListState()
     val hScroll = rememberScrollState()
@@ -146,6 +155,9 @@ fun TextFileViewer(
                 }
             }
             fullText = decoded.text
+            editing = false
+            draft = decoded.text
+            saveError = null
             encodingLabel = decoded.encodingLabel
             bytesTruncated = decoded.bytesTruncated ||
                 decoded.text.length >= TextEncoding.HARD_MAX_CHARS
@@ -228,6 +240,35 @@ fun TextFileViewer(
             else -> {
                 BoxWithConstraints(Modifier.fillMaxSize()) {
                     val maxReadable = 720.dp
+                    if (editing) {
+                        BasicTextField(
+                            value = draft,
+                            onValueChange = { draft = it; saveError = null },
+                            textStyle = TextStyle(
+                                color = palette.text,
+                                fontSize = fontSp.sp,
+                                fontFamily = if (monospace) FontFamily.Monospace else FontFamily.SansSerif,
+                            ),
+                            cursorBrush = SolidColor(VaultAccent),
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(
+                                    start = 12.dp,
+                                    end = 12.dp,
+                                    top = 12.dp,
+                                    bottom = if (controlsVisible) 140.dp else 24.dp,
+                                ),
+                        )
+                        if (saveError != null) {
+                            Text(
+                                saveError!!,
+                                color = Color(0xFFFF6B6B),
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .padding(bottom = if (controlsVisible) 150.dp else 32.dp),
+                            )
+                        }
+                    } else {
                     val contentMod = if (wrap) {
                         Modifier
                             .fillMaxWidth()
@@ -278,20 +319,21 @@ fun TextFileViewer(
                                         maxLines = 1,
                                     )
                                 }
-                                Text(
-                                    text = annotated,
-                                    color = palette.text,
-                                    fontSize = fontSp.sp,
-                                    fontFamily = if (monospace) {
-                                        FontFamily.Monospace
-                                    } else {
-                                        FontFamily.SansSerif
-                                    },
-                                    softWrap = wrap,
-                                    overflow = if (wrap) TextOverflow.Clip else TextOverflow.Visible,
-                                    maxLines = if (wrap) Int.MAX_VALUE else 1,
-                                    modifier = if (wrap) Modifier.weight(1f) else Modifier,
-                                )
+                                SelectionContainer(modifier = if (wrap) Modifier.weight(1f) else Modifier) {
+                                    Text(
+                                        text = annotated,
+                                        color = palette.text,
+                                        fontSize = fontSp.sp,
+                                        fontFamily = if (monospace) {
+                                            FontFamily.Monospace
+                                        } else {
+                                            FontFamily.SansSerif
+                                        },
+                                        softWrap = wrap,
+                                        overflow = if (wrap) TextOverflow.Clip else TextOverflow.Visible,
+                                        maxLines = if (wrap) Int.MAX_VALUE else 1,
+                                    )
+                                }
                             }
                         }
                         if (canLoadMore || bytesTruncated) {
@@ -329,7 +371,7 @@ fun TextFileViewer(
                             }
                         }
                     }
-                }
+                    } // end !editing
 
                 AnimatedVisibility(
                     visible = controlsVisible,
@@ -345,10 +387,41 @@ fun TextFileViewer(
                         wrap = wrap,
                         monospace = monospace,
                         lineNumbers = lineNumbers,
+                        editing = editing,
+                        canEdit = onSave != null,
+                        saveBusy = saveBusy,
                         searchOpen = searchOpen,
                         searchQuery = searchQuery,
                         matchIndex = matchIndex,
                         matchCount = matchLineIndices.size,
+                        onToggleEdit = {
+                            bumpChrome()
+                            if (editing) {
+                                editing = false
+                                draft = fullText.orEmpty()
+                                saveError = null
+                            } else {
+                                draft = fullText.orEmpty()
+                                editing = true
+                                searchOpen = false
+                            }
+                        },
+                        onSaveEdit = {
+                            val saver = onSave ?: return@TextReaderBottomChrome
+                            bumpChrome()
+                            scope.launch {
+                                saveBusy = true
+                                saveError = null
+                                val result = saver(draft)
+                                saveBusy = false
+                                result.onSuccess {
+                                    fullText = draft
+                                    editing = false
+                                }.onFailure {
+                                    saveError = it.message ?: "Save failed"
+                                }
+                            }
+                        },
                         onFontMinus = {
                             persistFont(
                                 (fontSp - TextReaderPrefs.FONT_STEP_SP)
@@ -408,6 +481,7 @@ fun TextFileViewer(
                         },
                     )
                 }
+                } // BoxWithConstraints
             }
         }
     }
@@ -490,6 +564,9 @@ private fun TextReaderBottomChrome(
     wrap: Boolean,
     monospace: Boolean,
     lineNumbers: Boolean,
+    editing: Boolean = false,
+    canEdit: Boolean = false,
+    saveBusy: Boolean = false,
     searchOpen: Boolean,
     searchQuery: String,
     matchIndex: Int,
@@ -504,6 +581,8 @@ private fun TextReaderBottomChrome(
     onSearchQueryChange: (String) -> Unit,
     onFindPrev: () -> Unit,
     onFindNext: () -> Unit,
+    onToggleEdit: () -> Unit = {},
+    onSaveEdit: () -> Unit = {},
 ) {
     Column(
         Modifier
@@ -620,12 +699,38 @@ private fun TextReaderBottomChrome(
                     tint = if (lineNumbers) VaultAccent else palette.muted,
                 )
             }
-            IconButton(onClick = onToggleSearch) {
+            IconButton(onClick = onToggleSearch, enabled = !editing) {
                 Icon(
                     Icons.Default.Search,
                     contentDescription = "Search",
                     tint = if (searchOpen) VaultAccent else palette.text,
                 )
+            }
+            if (canEdit) {
+                if (editing) {
+                    IconButton(onClick = onSaveEdit, enabled = !saveBusy) {
+                        Icon(
+                            Icons.Default.Save,
+                            contentDescription = "Save",
+                            tint = VaultAccent,
+                        )
+                    }
+                    IconButton(onClick = onToggleEdit, enabled = !saveBusy) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Cancel edit",
+                            tint = palette.text,
+                        )
+                    }
+                } else {
+                    IconButton(onClick = onToggleEdit) {
+                        Icon(
+                            Icons.Default.Edit,
+                            contentDescription = "Edit text",
+                            tint = palette.text,
+                        )
+                    }
+                }
             }
         }
     }

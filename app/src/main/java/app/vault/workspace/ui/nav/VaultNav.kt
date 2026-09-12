@@ -791,13 +791,13 @@ fun VaultNav(
                 onOpenFolder = { folder ->
                     openFolderAndShowLibrary(folder)
                 },
-                onCreateFolder = { name ->
+                onCreateFolder = { name, parentId ->
                     scope.launch {
-                        val result = repository.createFolder(name)
+                        val result = repository.createFolder(name, parentId)
                         statusMessage = result.fold(
                             onSuccess = {
-                                // Open new folder immediately so user is not dumped on home.
-                                openFolderAndShowLibrary(it)
+                                // Stay in Folders browse for nested create; open library only for root create.
+                                if (parentId == null) openFolderAndShowLibrary(it)
                                 "Created “${it.name}”"
                             },
                             onFailure = { "Could not create folder: ${it.message}" },

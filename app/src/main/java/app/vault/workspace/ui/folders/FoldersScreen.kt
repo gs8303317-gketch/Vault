@@ -1,6 +1,7 @@
 package app.vault.workspace.ui.folders
 
 import app.vault.workspace.ui.nav.VaultMotion
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -70,7 +71,7 @@ fun FoldersScreen(
     folders: List<VaultFolder>,
     onBack: () -> Unit,
     onOpenFolder: (VaultFolder) -> Unit,
-    onCreateFolder: (String) -> Unit,
+    onCreateFolder: (name: String, parentId: String?) -> Unit,
     onRenameFolder: (VaultFolder, String) -> Unit,
     onDeleteFolder: (VaultFolder) -> Unit,
 ) {
@@ -79,6 +80,16 @@ fun FoldersScreen(
     var pendingRename by remember { mutableStateOf<VaultFolder?>(null) }
     var newName by remember { mutableStateOf("") }
     var renameName by remember { mutableStateOf("") }
+    var browseStack by remember { mutableStateOf<List<VaultFolder>>(emptyList()) }
+    val parentId = browseStack.lastOrNull()?.id
+    val visibleFolders = remember(folders, parentId) {
+        folders.filter { it.parentId == parentId }
+    }
+    val titleName = browseStack.lastOrNull()?.name ?: "Folders"
+    fun goBack() {
+        if (browseStack.isNotEmpty()) browseStack = browseStack.dropLast(1) else onBack()
+    }
+    BackHandler { goBack() }
 
     Scaffold(
         containerColor = VaultAmoled,
@@ -87,12 +98,18 @@ fun FoldersScreen(
                 title = {
                     Column {
                         Text(
-                            "Folders",
+                            titleName,
                             fontWeight = FontWeight.SemiBold,
                             color = VaultText,
                         )
                         Text(
-                            if (folders.isEmpty()) "No folders yet" else "${folders.size} folders",
+                            when {
+                                browseStack.isNotEmpty() && visibleFolders.isEmpty() ->
+                                    "No subfolders — Open files or +"
+                                visibleFolders.isEmpty() -> "No folders yet"
+                                browseStack.isEmpty() -> "${visibleFolders.size} folders"
+                                else -> "${visibleFolders.size} subfolders"
+                            },
                             color = VaultTextMuted,
                             style = MaterialTheme.typography.labelMedium,
                             fontSize = 12.sp,
@@ -100,12 +117,19 @@ fun FoldersScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = { goBack() }) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
                             tint = VaultText,
                         )
+                    }
+                },
+                actions = {
+                    if (browseStack.isNotEmpty()) {
+                        TextButton(onClick = { onOpenFolder(browseStack.last()) }) {
+                            Text("Open files", color = VaultAccent)
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -135,7 +159,7 @@ fun FoldersScreen(
             }
         },
     ) { padding ->
-        if (folders.isEmpty()) {
+        if (visibleFolders.isEmpty()) {
             Box(
                 Modifier
                     .fillMaxSize()
@@ -162,13 +186,17 @@ fun FoldersScreen(
                         )
                     }
                     Text(
-                        "No folders yet",
+                        if (browseStack.isEmpty()) "No folders yet" else "No subfolders yet",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.SemiBold,
                         color = VaultText,
                     )
                     Text(
-                        "Tap + to create a folder, then move items into it.",
+                        if (browseStack.isEmpty()) {
+                            "Tap + to create a folder, then move items into it."
+                        } else {
+                            "Tap + for a subfolder, or Open files to store here."
+                        },
                         color = VaultTextMuted,
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.widthIn(max = 280.dp),
@@ -183,7 +211,7 @@ fun FoldersScreen(
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(folders, key = { it.id }) { folder ->
+                items(visibleFolders, key = { it.id }) { folder ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -191,7 +219,7 @@ fun FoldersScreen(
                             .background(VaultSurface)
                             .border(1.dp, VaultAccent.copy(alpha = 0.1f), RoundedCornerShape(14.dp))
                             .combinedClickable(
-                                onClick = { onOpenFolder(folder) },
+                                onClick = { browseStack = browseStack + folder },
                                 onLongClick = {
                                     renameName = folder.name
                                     pendingRename = folder
@@ -222,6 +250,13 @@ fun FoldersScreen(
                             color = VaultText,
                             modifier = Modifier.weight(1f),
                         )
+                        IconButton(onClick = { onOpenFolder(folder) }) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = "Open folder files",
+                                tint = VaultAccent,
+                            )
+                        }
                         IconButton(
                             onClick = {
                                 renameName = folder.name
@@ -264,7 +299,11 @@ fun FoldersScreen(
             properties = VaultMotion.dialogProperties,
             containerColor = VaultSurface,
             title = {
-                Text("New folder", fontWeight = FontWeight.SemiBold, color = VaultText)
+                Text(
+                    if (browseStack.isEmpty()) "New folder" else "New subfolder",
+                    fontWeight = FontWeight.SemiBold,
+                    color = VaultText,
+                )
             },
             text = {
                 OutlinedTextField(
@@ -282,7 +321,7 @@ fun FoldersScreen(
                     onClick = {
                         val n = newName.trim()
                         if (n.isNotEmpty()) {
-                            onCreateFolder(n)
+                            onCreateFolder(n, parentId)
                             showCreate = false
                         }
                     },
@@ -391,8 +430,12 @@ fun MoveToFolderDialog(
                     modifier = Modifier.clickable { onSelect(null) },
                 )
                 folders.forEach { folder ->
+                    val depth = generateSequence(folder) { f ->
+                        folders.find { it.id == f.parentId }
+                    }.count() - 1
+                    val pad = " " * depth.coerceAtLeast(0)
                     ListItem(
-                        headlineContent = { Text(folder.name, color = VaultText) },
+                        headlineContent = { Text(pad + folder.name, color = VaultText) },
                         leadingContent = {
                             Icon(Icons.Default.Folder, contentDescription = null, tint = VaultAccent)
                         },

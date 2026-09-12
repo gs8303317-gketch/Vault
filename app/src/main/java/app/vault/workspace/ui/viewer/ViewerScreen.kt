@@ -325,6 +325,7 @@ fun ViewerScreen(
                     onSingleTap = { toggleChrome() },
                     controlsVisible = chromeVisible,
                     onControlsInteraction = { keepChromeVisible() },
+                    onSave = { text -> repository.replaceTextContent(item.id, text) },
                 )
                 else -> {}
             }
@@ -439,6 +440,7 @@ fun ViewerScreen(
                             onSingleTap = { toggleChrome() },
                             controlsVisible = chromeVisible,
                             onControlsInteraction = { keepChromeVisible() },
+                            onSave = { text -> repository.replaceTextContent(item.id, text) },
                         )
                         DocumentMime.ViewerKind.OTHER -> OtherFileScreen(
                             item = item,
