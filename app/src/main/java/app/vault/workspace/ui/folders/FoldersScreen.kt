@@ -433,7 +433,7 @@ fun MoveToFolderDialog(
                     val depth = generateSequence(folder) { f ->
                         folders.find { it.id == f.parentId }
                     }.count() - 1
-                    val pad = " " * depth.coerceAtLeast(0)
+                    val pad = " ".repeat(depth.coerceAtLeast(0))
                     ListItem(
                         headlineContent = { Text(pad + folder.name, color = VaultText) },
                         leadingContent = {
